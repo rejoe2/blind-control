@@ -31,6 +31,9 @@ long mark_time_while_mute = 0;
 
 //jal
 int JalState = 0;
+long jal_time_for_one_task = 6000;
+long jal_time_until_finish = 0;
+long jal_time_while_mute = 0;
 
 
 void setup() {
@@ -59,12 +62,12 @@ void loop() {
   JalDownState = digitalRead(SwJalDown);
 
   if (mark_time_while_mute > millis()) {
-  return;
-}
+    return;
+  }
 
-//Markise
-if (MarkUpState == LOW)  { //Pressing "Move Up"
-  if (MarkState == MOTOR_MOVING_DOWN) {
+  //Markise
+  if (MarkUpState == LOW)  { //Pressing "Move Up"
+    if (MarkState == MOTOR_MOVING_DOWN) {
       stopMarkMovement(MOTOR_POSITION_UNKNOWN);
       mark_time_while_mute = millis() + 400;
       return;
@@ -76,7 +79,7 @@ if (MarkUpState == LOW)  { //Pressing "Move Up"
     }
 
   } else if (MarkDownState == LOW) { //Pressing "Move Down"
-  if (MarkState == MOTOR_MOVING_UP) {
+    if (MarkState == MOTOR_MOVING_UP) {
       stopMarkMovement(MOTOR_POSITION_UNKNOWN);
       mark_time_while_mute = millis() + 400;
       return;
@@ -87,7 +90,6 @@ if (MarkUpState == LOW)  { //Pressing "Move Up"
       }
     }
   }
-
 
   if (mark_time_until_finish <= millis() && mark_time_until_finish > 0) {
     switch (MarkState) {
@@ -100,80 +102,106 @@ if (MarkUpState == LOW)  { //Pressing "Move Up"
     }
   }
 
-  /*
-    // Markise
-    // Activated Input is "LOW"
-    if (MarkUpState == LOW)  {
-      digitalWrite(MarkOn, HIGH);
-    } else {
-      if (MarkDownState == HIGH) {
-        digitalWrite(MarkOn, LOW);
-      }
-      if (MarkDownState == LOW) {
-        digitalWrite(MarkDown, HIGH);
-        delay(150); // Motor Protection
-        digitalWrite(MarkOn, HIGH);
-      } else {
-        digitalWrite(MarkOn, LOW);
-        delay(150);
-        digitalWrite(MarkDown, LOW);
-      }
-    }*/
-
-  // Jalosie
-  if (JalUpState == LOW) {
-  digitalWrite(JalOn, HIGH);
-  } else {
-    if (JalDownState == HIGH) {
-      digitalWrite(JalOn, LOW);
+  //Jalosie
+  if (JalUpState == LOW)  { //Pressing "Move Up"
+    if (JalState == MOTOR_MOVING_DOWN) {
+      stopJalMovement(MOTOR_POSITION_UNKNOWN);
+      jal_time_while_mute = millis() + 400;
+      return;
     }
-    if (JalDownState == LOW) {
-      digitalWrite(JalDown, HIGH);
-      delay(150);
-      digitalWrite(JalOn, HIGH);
-    } else {
-      digitalWrite(JalOn, LOW);
-      delay(150);
-      digitalWrite(JalDown, LOW);
+    if (canJalMove(MOTOR_POSITION_UP)) {
+      if (JalState != MOTOR_MOVING_UP) {
+        startJalMovement(MOTOR_MOVING_UP);
+      }
+    }
+
+  } else if (JalDownState == LOW) { //Pressing "Move Down"
+    if (JalState == MOTOR_MOVING_UP) {
+      stopJalMovement(MOTOR_POSITION_UNKNOWN);
+      jal_time_while_mute = millis() + 400;
+      return;
+    }
+    if (canJalMove(MOTOR_POSITION_DOWN)) {
+      if (JalState != MOTOR_MOVING_DOWN) {
+        startJalMovement(MOTOR_MOVING_DOWN);
+      }
     }
   }
 
-  //Motor protection; uncharge capacitor over the coil
-  delay(400);
-}
 
-
-//mark
-boolean canMarkMove(int requested) {
-  switch (requested) {
-    case MOTOR_POSITION_UNKNOWN:
-      return false;
-    case MOTOR_POSITION_UP:
-      return MarkState != MOTOR_POSITION_UP;
-    case MOTOR_POSITION_DOWN:
-      return MarkState != MOTOR_POSITION_DOWN;
+  if (jal_time_until_finish <= millis() && jal_time_until_finish > 0) {
+    switch (JalState) {
+      case MOTOR_MOVING_UP:
+        stopJalMovement(MOTOR_POSITION_UP);
+        break;
+      case MOTOR_MOVING_DOWN:
+        stopJalMovement(MOTOR_POSITION_DOWN);
+        break;
+    }
   }
-  return true;
+
+  
 }
 
-void stopMarkMovement(int destination) {
-  mark_time_until_finish = 0; //Set destination time to 0 -> it's not active anymore
-  digitalWrite(MarkOn, LOW);
-  delay(150);
-  digitalWrite(MarkDown, LOW);
-  MarkState = destination;
-}
+  //mark
+  boolean canMarkMove(int requested) {
+    switch (requested) {
+      case MOTOR_POSITION_UNKNOWN:
+        return false;
+      case MOTOR_POSITION_UP:
+        return MarkState != MOTOR_POSITION_UP;
+      case MOTOR_POSITION_DOWN:
+        return MarkState != MOTOR_POSITION_DOWN;
+    }
+    return true;
+  }
 
-void startMarkMovement(int motor_state) {
-  MarkState = motor_state; //Set current motor state. Either "MOTOR_MOVING_DOWN" or "MOTOR_MOVING_UP"
-  int mark_down_type = (motor_state == MOTOR_MOVING_UP) ? LOW : HIGH; //Set the relais depending on the movement direction; UP -> LOW
-  digitalWrite(MarkDown, mark_down_type); //Activate relais
-  delay(150);
-  digitalWrite(MarkOn, HIGH); //Activate motor
-  mark_time_until_finish = millis() + mark_time_for_one_task; //Set destination time
-}
+  void stopMarkMovement(int destination) {
+    mark_time_until_finish = 0; //Set destination time to 0 -> it's not active anymore
+    digitalWrite(MarkOn, LOW);
+    delay(150);
+    digitalWrite(MarkDown, LOW);
+    MarkState = destination;
+  }
 
-//jal
+  void startMarkMovement(int motor_state) {
+    MarkState = motor_state; //Set current motor state. Either "MOTOR_MOVING_DOWN" or "MOTOR_MOVING_UP"
+    int mark_down_type = (motor_state == MOTOR_MOVING_UP) ? LOW : HIGH; //Set the relais depending on the movement direction; UP -> LOW
+    digitalWrite(MarkDown, mark_down_type); //Activate relais
+    delay(150);
+    digitalWrite(MarkOn, HIGH); //Activate motor
+    mark_time_until_finish = millis() + mark_time_for_one_task; //Set destination time
+  }
+
+  //jal
+  boolean canJalMove(int requested) {
+    switch (requested) {
+      case MOTOR_POSITION_UNKNOWN:
+        return false;
+      case MOTOR_POSITION_UP:
+        return JalState != MOTOR_POSITION_UP;
+      case MOTOR_POSITION_DOWN:
+        return JalState != MOTOR_POSITION_DOWN;
+    }
+    return true;
+  }
+
+  void stopJalMovement(int destination) {
+    jal_time_until_finish = 0; //Set destination time to 0 -> it's not active anymore
+    digitalWrite(JalOn, LOW);
+    delay(150);
+    digitalWrite(JalDown, LOW);
+    JalState = destination;
+  }
+
+  void startJalMovement(int motor_state) {
+    JalState = motor_state; //Set current motor state. Either "MOTOR_MOVING_DOWN" or "MOTOR_MOVING_UP"
+    int jal_down_type = (motor_state == MOTOR_MOVING_UP) ? LOW : HIGH; //Set the relais depending on the movement direction; UP -> LOW
+    digitalWrite(JalDown, jal_down_type); //Activate relais
+    delay(150);
+    digitalWrite(JalOn, HIGH); //Activate motor
+    jal_time_until_finish = millis() + jal_time_for_one_task; //Set destination time
+  }
 
 
 
@@ -181,9 +209,8 @@ void startMarkMovement(int motor_state) {
 
 
 
-
-void debug(String text) {
-  Serial.println(text);
-}
+  void debug(String text) {
+    Serial.println(text);
+  }
 
 
