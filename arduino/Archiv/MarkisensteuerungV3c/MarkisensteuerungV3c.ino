@@ -1,19 +1,27 @@
+//HW Arduino Pro Mini M328 w. 8MHz
+
+
+
 // Input Pins for Switch Markise Up/Down
-const int SwMarkUp = 9;
-const int SwMarkDown = 8;
+const int SwMarkUp = 8;
+const int SwMarkDown = 9;
 // Input Pins for Switch Jalosie Up/Down
 const int SwJalUp = 7;
 const int SwJalDown = 6;
+//Notfall
+const int SwEmergency = 5;
+
 
 // Output Pins
-const int MarkOn = 10;
-const int MarkDown = 11;
-const int JalOn = 12;
-const int JalDown = 13;
+const int MarkOn = 12;
+const int MarkDown = 13;
+const int JalOn = 10;
+const int JalDown = 11;
 int MarkUpState = 0;
 int MarkDownState = 0;
 int JalUpState = 0;
 int JalDownState = 0;
+int EmergencyState = 0;
 
 //States
 const int MOTOR_POSITION_UNKNOWN = 0;
@@ -25,13 +33,13 @@ const int MOTOR_MOVING_DOWN = 4;
 
 //mark
 int MarkState = 0;
-long mark_time_for_one_task = 6000;
+long mark_time_for_one_task = 55000;
 long mark_time_until_finish = 0;
 long mark_time_while_mute = 0;
 
 //jal
 int JalState = 0;
-long jal_time_for_one_task = 6000;
+long jal_time_for_one_task = 50000;
 long jal_time_until_finish = 0;
 long jal_time_while_mute = 0;
 
@@ -42,15 +50,18 @@ void setup() {
   pinMode(SwMarkDown, INPUT_PULLUP);
   pinMode(SwJalUp, INPUT_PULLUP);
   pinMode(SwJalDown, INPUT_PULLUP);
+  pinMode(SwEmergency, INPUT_PULLUP);
   pinMode(MarkOn, OUTPUT);
   pinMode(MarkDown, OUTPUT);
   pinMode(JalOn, OUTPUT);
   pinMode(JalDown, OUTPUT);
-  digitalWrite(MarkOn, LOW);
-  digitalWrite(MarkDown, LOW);
-  digitalWrite(JalOn, LOW);
-  digitalWrite(JalDown, LOW);
+  digitalWrite(MarkOn, HIGH);
+  digitalWrite(MarkDown, HIGH);
+  digitalWrite(JalOn, HIGH);
+  digitalWrite(JalDown, HIGH);
+  
   Serial.begin(9600);
+
 
 }
 
@@ -60,10 +71,23 @@ void loop() {
   MarkDownState = digitalRead(SwMarkDown);
   JalUpState = digitalRead(SwJalUp);
   JalDownState = digitalRead(SwJalDown);
+  EmergencyState = digitalRead(SwEmergency);
+
 
   if (mark_time_while_mute > millis()) {
+    debug("Is muted");
     return;
   }
+
+  if(EmergencyState == LOW) {
+    debug("Emergency!");
+      if (MarkState != MOTOR_MOVING_UP) {
+    debug("Move motor up");
+        startMarkMovement(MOTOR_MOVING_UP);
+      }
+    return;
+  }
+    debug("No Emergency");
 
   //Markise
   if (MarkUpState == LOW)  { //Pressing "Move Up"
@@ -158,18 +182,18 @@ void loop() {
 
   void stopMarkMovement(int destination) {
     mark_time_until_finish = 0; //Set destination time to 0 -> it's not active anymore
-    digitalWrite(MarkOn, LOW);
+    digitalWrite(MarkOn, HIGH);
     delay(150);
-    digitalWrite(MarkDown, LOW);
+    digitalWrite(MarkDown, HIGH);
     MarkState = destination;
   }
 
   void startMarkMovement(int motor_state) {
     MarkState = motor_state; //Set current motor state. Either "MOTOR_MOVING_DOWN" or "MOTOR_MOVING_UP"
-    int mark_down_type = (motor_state == MOTOR_MOVING_UP) ? LOW : HIGH; //Set the relais depending on the movement direction; UP -> LOW
+    int mark_down_type = (motor_state == MOTOR_MOVING_UP) ? HIGH : LOW; //Set the relais depending on the movement direction; UP -> LOW
     digitalWrite(MarkDown, mark_down_type); //Activate relais
     delay(150);
-    digitalWrite(MarkOn, HIGH); //Activate motor
+    digitalWrite(MarkOn, LOW); //Activate motor
     mark_time_until_finish = millis() + mark_time_for_one_task; //Set destination time
   }
 
@@ -188,18 +212,18 @@ void loop() {
 
   void stopJalMovement(int destination) {
     jal_time_until_finish = 0; //Set destination time to 0 -> it's not active anymore
-    digitalWrite(JalOn, LOW);
+    digitalWrite(JalOn, HIGH);
     delay(150);
-    digitalWrite(JalDown, LOW);
+    digitalWrite(JalDown, HIGH);
     JalState = destination;
   }
 
   void startJalMovement(int motor_state) {
     JalState = motor_state; //Set current motor state. Either "MOTOR_MOVING_DOWN" or "MOTOR_MOVING_UP"
-    int jal_down_type = (motor_state == MOTOR_MOVING_UP) ? LOW : HIGH; //Set the relais depending on the movement direction; UP -> LOW
+    int jal_down_type = (motor_state == MOTOR_MOVING_UP) ? HIGH: LOW; //Set the relais depending on the movement direction; UP -> LOW
     digitalWrite(JalDown, jal_down_type); //Activate relais
     delay(150);
-    digitalWrite(JalOn, HIGH); //Activate motor
+    digitalWrite(JalOn, LOW); //Activate motor
     jal_time_until_finish = millis() + jal_time_for_one_task; //Set destination time
   }
 
@@ -212,5 +236,4 @@ void loop() {
   void debug(String text) {
     Serial.println(text);
   }
-
 
