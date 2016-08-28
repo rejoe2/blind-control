@@ -1,6 +1,8 @@
 #include <Wgs.h>
 
-
+// For RTC
+#include "Wire.h" //warum andere Schreibweise ?
+#define DS3231_I2C_ADDRESS 0x68
 
 // Input Pins for Switch Markise Up/Down
 const int SwMarkUp = 8;
@@ -23,48 +25,112 @@ int JalUpState = 0;
 int JalDownState = 0;
 int EmergencyState = 0;
 
+//autostart
+const int autostart_time = 9;
+const int autostart_check_delay = 200; //in ticks
+const int autostart_check_tick = 200; //in ticks
+const boolean autostart_done = false;
+
 Wgs mark(MarkOn, MarkDown, 55000);
 Wgs jal(JalOn, JalDown, 55000);
 
+
+byte decToBcd(byte val)
+{
+	return( (val/10*16) + (val%10) );
+}
+// Convert binary coded decimal to normal decimal numbers
+byte bcdToDec(byte val)
+{
+	return( (val/16*10) + (val%16) );
+}
+
+
 void setup()
 {
-  // Initialize In-/Outputs
-  pinMode(SwMarkUp, INPUT_PULLUP);
-  pinMode(SwMarkDown, INPUT_PULLUP);
-  pinMode(SwJalUp, INPUT_PULLUP);
-  pinMode(SwJalDown, INPUT_PULLUP);
-  pinMode(SwEmergency, INPUT_PULLUP);
-  pinMode(MarkOn, OUTPUT);
-  pinMode(MarkDown, OUTPUT);
-  pinMode(JalOn, OUTPUT);
-  pinMode(JalDown, OUTPUT);
-  digitalWrite(MarkOn, HIGH);
-  digitalWrite(MarkDown, HIGH);
-  digitalWrite(JalOn, HIGH);
-  digitalWrite(JalDown, HIGH);
-  
-  Serial.begin(9600);
+	// Initialize In-/Outputs
+	pinMode(SwMarkUp, INPUT_PULLUP);
+	pinMode(SwMarkDown, INPUT_PULLUP);
+	pinMode(SwJalUp, INPUT_PULLUP);
+	pinMode(SwJalDown, INPUT_PULLUP);
+	pinMode(SwEmergency, INPUT_PULLUP);
+	pinMode(MarkOn, OUTPUT);
+	pinMode(MarkDown, OUTPUT);
+	pinMode(JalOn, OUTPUT);
+	pinMode(JalDown, OUTPUT);
+	digitalWrite(MarkOn, HIGH);
+	digitalWrite(MarkDown, HIGH);
+	digitalWrite(JalOn, HIGH);
+	digitalWrite(JalDown, HIGH);
+
+	Wire.begin();
+	Serial.begin(9600);
 }
 
 void loop()
 {
 
-  MarkUpState = digitalRead(SwMarkUp);
-  MarkDownState = digitalRead(SwMarkDown);
-  JalUpState = digitalRead(SwJalUp);
-  JalDownState = digitalRead(SwJalDown);
-  EmergencyState = digitalRead(SwEmergency);
-  
-  
-  if(EmergencyState == LOW) { //Rain -> disable mark
-  //Notfall
-  mark.setDisable(true);
-  
-  }else{
-  mark.setDisable(false);
-  }
-  
-  mark.loop(MarkUpState == LOW, MarkDownState == LOW);
-  jal.loop(JalUpState == LOW, JalDownState == LOW);
-  
+	bool button_mark_up = digitalRead(SwMarkUp) == LOW;
+	bool button_mark_down = digitalRead(SwMarkDown) == LOW;
+	bool button_jal_up = digitalRead(SwJalUp) == LOW;
+	bool button_jal_down = digitalRead(SwJalDown) == LOW;  
+	bool emergency = digitalRead(SwEmergency) == LOW; //Current use: in case of rain
+
+	mark.setDisable(emergency);  
+
+	//Autostart code
+	autostart_check_tick++;
+	if(autostart_check_tick >= autostart_check_delay){
+		autostart_check_tick = 0;  
+		byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+		readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month, &year);
+
+		if(autostart_done){ //Already done
+			if(hour > autostart_time){
+				autostart_done = false;
+			}
+		}else{
+			if(hour == autostart_time &! emergency){
+				button_mark_down = true;
+				autostart_done = true;
+			}
+		}
+
+	}
+	
+
+	mark.loop(button_mark_up, button_mark_down);
+	jal.loop(button_jal_up, button_jal_down);
+
+
 }
+
+
+
+
+
+
+
+
+void readDS3231time(byte *second,
+byte *minute,
+byte *hour,
+byte *dayOfWeek,
+byte *dayOfMonth,
+byte *month,
+byte *year)
+{
+	Wire.beginTransmission(DS3231_I2C_ADDRESS);
+	Wire.write(0); // set DS3231 register pointer to 00h
+	Wire.endTransmission();
+	Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
+	// request seven bytes of data from DS3231 starting from register 00h
+	*second = bcdToDec(Wire.read() & 0x7f);
+	*minute = bcdToDec(Wire.read());
+	*hour = bcdToDec(Wire.read() & 0x3f);
+	*dayOfWeek = bcdToDec(Wire.read());
+	*dayOfMonth = bcdToDec(Wire.read());
+	*month = bcdToDec(Wire.read());
+	*year = bcdToDec(Wire.read());
+}
+
