@@ -1,5 +1,5 @@
 // (C) www.neuby.de
-//V2.001
+//V2.004
 // Enable debug prints to serial monitor
 #define MY_DEBUG
 // Enable RS485 transport layer
@@ -9,9 +9,6 @@
 // Set RS485 baud rate to use
 #define MY_RS485_BAUD_RATE 9600
 #define MY_NODE_ID 118
-//#define MY_TRANSPORT_RELAXED
-#define MY_TRANSPORT_WAIT_READY_MS 2000
-//#define MY_TRANSPORT_RELAXED
 #define MY_TRANSPORT_WAIT_READY_MS 3000
 #include <MySensors.h>
 #include <Arduino.h>
@@ -24,12 +21,17 @@
 
 #define CHILD_ID_LIGHT 0
 #define CHILD_ID_Rain 1   // Id of the sensor child
-unsigned long SLEEP_TIME = 100; // Sleep time between reads (in milliseconds)
+#define CHILD_ID_MARKISE1 2
+#define CHILD_ID_CONFIG1 102 // Id for Jal-settings
+
+unsigned long SEND_FREQUENCY = 180000; // Sleep time between reads (in milliseconds)
 
 // Initialize motion message
 MyMessage msgRain(CHILD_ID_Rain, V_RAIN);
 #define DIGITAL_INPUT_SENSOR 3   // The digital input you attached your rain sensor.  (Only 2 and 3 generates interrupt!)
+#define SENSOR_INTERRUPT DIGITAL_INPUT_SENSOR-2 // Usually the interrupt = pin -2 (on uno/nano anyway)
 
+MyMessage msgMarkise1(CHILD_ID_MARKISE1, V_DIMMER);
 
 
 
@@ -98,9 +100,14 @@ byte bcdToDec(byte val)
   return( (val/16*10) + (val%16) );
 }
 
+void before() {
 
-void setup()
-{
+  // initialize our digital pins internal pullup resistor so one pulse switches from high to low (less distortion)
+  pinMode(DIGITAL_INPUT_SENSOR, INPUT_PULLUP);
+  digitalWrite(DIGITAL_INPUT_SENSOR, HIGH);
+  pulseCount = oldPulseCount = 0;
+  attachInterrupt(SENSOR_INTERRUPT, onPulse, FALLING);
+
   // Initialize In-/Outputs
   pinMode(SwMarkUp, INPUT_PULLUP);
   pinMode(SwMarkDown, INPUT_PULLUP);
@@ -129,14 +136,15 @@ void setup()
   debounceMarkEmergency.attach(SwEmergency);
   debounceMarkEmergency.interval(5);
 
-
-
-
   Wire.begin();
-  //  Serial.begin(57600);
 }
 
+void setup()
+{
 
+  //  Serial.begin(57600);
+
+}
 
 void presentation()  {
   // Send the sketch version information to the gateway and Controller
@@ -145,6 +153,9 @@ void presentation()  {
   // Register all sensors to gateway (they will be created as child devices)
   present(CHILD_ID_LIGHT, S_LIGHT_LEVEL);
   present(CHILD_ID_Rain, S_RAIN);
+  present(CHILD_ID_MARKISE1, S_COVER);
+  present(CHILD_ID_CONFIG1, S_CUSTOM);
+
 
 }
 
@@ -154,9 +165,53 @@ void presentation()  {
 
 void loop()
 {
-Serial.print("Loop/");
+//Serial.print("Loop/");
     #ifdef MY_OTA_FIRMWARE_FEATURE
     #endif
+unsigned long currentTime = millis();
+
+  // Only send values at a maximum frequency or woken up from sleep
+  if (currentTime - lastSend > SEND_FREQUENCY)
+  {
+    lastSend = currentTime;
+    if (flow != oldflow) {
+      oldflow = flow;
+#ifdef MY_DEBUG_LOCAL
+      Serial.print("l/min:");
+      Serial.println(flow);
+#endif
+      // Check that we dont get unresonable large flow value.
+      // could hapen when long wraps or false interrupt triggered
+      if (flow < ((unsigned long)MAX_FLOW)) {
+        send(flowMsg.set(flow, 2));                   // Send flow value to gw
+      }
+    }
+
+    // No Pulse count received in 2min
+    if (currentTime - lastPulse > 120000) {
+      flow = 0;
+    }
+
+    // Pulse count has changed
+    if (pulseCount != oldPulseCount) {
+      oldPulseCount = pulseCount;
+#ifdef MY_DEBUG_LOCAL
+      Serial.print("pulsecnt:");
+      Serial.println(pulseCount);
+#endif
+      send(lastCounterMsg.set(pulseCount));                  // Send  pulsecount value to gw in VAR1
+
+      double volume = ((double)pulseCount / ((double)PULSE_FACTOR));
+      if (volume != oldvolume) {
+        oldvolume = volume;
+#ifdef MY_DEBUG_LOCAL
+        Serial.print("vol:");
+        Serial.println(volume, 3);
+#endif
+        send(volumeMsg.set(volume, 3));               // Send volume value to gw
+      }
+    }
+  }
 
     // Read buttons, interface
     uint8_t buttonPressed = 0;
@@ -168,7 +223,6 @@ Serial.print("Loop/");
         MUp=true;
         MDown=false;
         //send(msgUp.set(1), 1);
-        mark.loop(MUp, MDown);
         Serial.print("Mup/");
         break;
 
@@ -177,7 +231,6 @@ Serial.print("Loop/");
         MDown=true;
         MUp=false;
         //send(msgDown.set(1), 1);
-        mark.loop(MUp, MDown);
         Serial.print("MDown/");
         break;
 
@@ -232,108 +285,114 @@ mark.setDisable(emergency);
   }
 
 
-
+  mark.loop(MUp, MDown);
   //jal.loop(button_jal_up, button_jal_down);
 
- sleep(digitalPinToInterrupt(DIGITAL_INPUT_SENSOR), CHANGE, SLEEP_TIME);
+
 
 }
 
 
-
-
-
-/* ======================================================================
-Function: processButtons
-Purpose : Read buttons and update status
-Output  : button pressed
-Comments:
-====================================================================== */
-uint8_t processButtons() {
-
-  uint8_t result = BT_PRESS_None;
-
-  if (debounceJalUp.update()) {
-    // Button Up change detected
-    if (debounceJalUp.fell()) result = BT_PRESS_JalUp;
-    else result = BT_PRESS_Stop; // Button released
+void receive(const MyMessage & message) {
+  if (message.sensor == CHILD_ID_SERVO) {
+    myservo.attach(SERVO_DIGITAL_OUT_PIN);
+    attachedServo = true;
+    if (message.isAck()) {
+      Serial.println("Ack from gw rec.");
+    }
+    if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
+      int val = message.getInt();
+      if (val > 3) {
+        val = 3;
+      };
+      //myservo.write(SERVO_MAX + (SERVO_MIN - SERVO_MAX) / 100 * val); // sets the servo position 0-180
+      myservo.write(SERVO_MAX + (SERVO_MIN - SERVO_MAX) / 100 * (130 - val * 40)); // sets the servo position 0-180
+      // Write some debug info
+      //Serial.print("Servo change; state: ");
+      //Serial.println(val);
+    }
+    timeOfLastChange = millis();
   }
-
-  if (debounceJalDown.update()) {
-    // Button Down change detected
-    if (debounceJalDown.fell()) result = BT_PRESS_JalDown;
-    else result = BT_PRESS_Stop;
+  else if (message.sensor == CHILD_ID_GAS) {
+    if (message.type == V_VAR1) {
+      pulseCount = message.getULong();
+      flow = oldflow = 0;
+      //Serial.print("Rec. last pulse count from gw:");
+      //Serial.println(pulseCount);
+      pcReceived = true;
+    }
   }
+  else if (message.sensor == CHILD_ID_RELAY) {
 
-  if (debounceMarkEmergency.update()) {
-    // Button Stop change detected
-    if (debounceMarkEmergency.fell()) result = BT_PRESS_MarkEmergency;
+    if (message.type == V_LIGHT) {
+      // Change relay state
+      state = message.getBool();
+      digitalWrite(RELAY_PIN, state ? RELAY_ON : RELAY_OFF);
+#ifdef MY_DEBUG
+      // Write some debug info
+      Serial.print("Gw change relay:");
+      Serial.print(message.sensor);
+      Serial.print(", New status: ");
+      Serial.println(message.getBool());
+#endif
+    }
   }
-
-  return result;
-
+  else if (message.sensor == CHILD_ID_CONFIG) {
+    if (message.type == V_VAR1) {
+      int tempMaxPump = message.getInt(); //upper temp level at warmwater circle pump
+    }
+    else if (message.type == V_VAR2) {
+      int tempMaxHeatingPump = message.getInt(); //temperature to switch internal heating pump to highest level
+    }
+    else if (message.type == V_VAR3) {
+      int tempLowExtToLevelIII = message.getInt(); //External low temperature to switch internal heating pump to highest level
+    }
+    else if (message.type == V_VAR4) {
+      int tempLowExtToLevelII = message.getInt(); //External highest temperature to switch internal heating pump to medium level
+    }
+    else if (message.type == V_VAR5) {
+      if (message.getBool()) {
+        lastPumpSwitch = millis(); //if true: Reset timer (Heartbeat functionality)
+#ifdef MY_DEBUG_LOCAL
+        // Write some debug info
+        Serial.print("Timer reset to ");
+        Serial.print(lastPumpSwitch);
+#endif
+      } else {
+        lastPumpSwitch = 0; //if false: switch immediately if necessary
+#ifdef MY_DEBUG_LOCAL
+        // Write some debug info
+        Serial.print("Timer deleted, lastPumpSwitch=");
+        Serial.print(lastPumpSwitch);
+#endif
+      }
+    }
+  }
+  else if (message.sensor == CHILD_ID_CONFIG0) {
+    if (message.type == V_VAR1) {
+      autoMode = message.getBool(); //enable autoMode
+    }
+  }
 }
 
-// Buttons
-//Bounce debounceJalUp    = Bounce();
-//Bounce debounceJalDown  = Bounce();
-//Bounce debounceMarkEmergency  = Bounce();
-//Bounce debounceMarkUp    = Bounce();
-//Bounce debounceMarkDown  = Bounce();
 
-
-
-/* ======================================================================
-Function: readDS3231timeprocessButtons
-====================================================================== */
-void readDS3231time(byte *second,
-byte *minute,
-byte *hour,
-byte *dayOfWeek,
-byte *dayOfMonth,
-byte *month,
-byte *year)
+/*
+Interrupt-Routine
+*/
+void onPulse()
 {
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set DS3231 register pointer to 00h
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
-  // request seven bytes of data from DS3231 starting from register 00h
-  *second = bcdToDec(Wire.read() & 0x7f);
-  *minute = bcdToDec(Wire.read());
-  *hour = bcdToDec(Wire.read() & 0x3f);
-  *dayOfWeek = bcdToDec(Wire.read());
-  *dayOfMonth = bcdToDec(Wire.read());
-  *month = bcdToDec(Wire.read());
-  *year = bcdToDec(Wire.read());
-}
-void displayTime()
-{
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-  // retrieve data from DS3231
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
-  &year);
-  // send it to the serial monitor
-  Serial.print(hour, DEC);
-  // convert the byte variable to a decimal number when displayed
-  Serial.print(":");
-  if (minute<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(minute, DEC);
-  Serial.print(":");
-  if (second<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(second, DEC);
-  Serial.print(" ");
-  Serial.print(dayOfMonth, DEC);
-  Serial.print("/");
-  Serial.print(month, DEC);
-  Serial.print("/");
-  Serial.println(year, DEC);
+    unsigned long newBlink = micros();
+    unsigned long interval = newBlink - lastBlink;
 
-
+    if (interval != 0)
+    {
+      lastPulse = millis();
+      if (interval < 1000000L) {
+        // Sometimes we get interrupt on RISING,  1000000 = 1sek debounce ( max 60 l/min)
+        return;
+      }
+      flow = (60000000.0 / interval) / ppl;
+    }
+    lastBlink = newBlink;
+   pulseCount++;
 }
