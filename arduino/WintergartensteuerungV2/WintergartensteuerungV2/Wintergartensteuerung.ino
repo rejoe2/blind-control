@@ -1,5 +1,5 @@
 // (C) www.neuby.de
-//V2.004
+//V2.005
 // Enable debug prints to serial monitor
 #define MY_DEBUG
 // Enable RS485 transport layer
@@ -21,8 +21,13 @@
 
 #define CHILD_ID_LIGHT 0
 #define CHILD_ID_Rain 1   // Id of the sensor child
-#define CHILD_ID_MARKISE1 2
+#define CHILD_ID_MARKDWN 2
+#define CHILD_ID_MARKUP 3
+#define CHILD_ID_MARKRAIN 4
+#define CHILD_ID_JALDWN 5
+#define CHILD_ID_JALUP 6
 #define CHILD_ID_CONFIG1 102 // Id for Jal-settings
+//CHILD_ID_SERVO
 
 unsigned long SEND_FREQUENCY = 180000; // Sleep time between reads (in milliseconds)
 
@@ -52,6 +57,18 @@ Bounce debounceMarkDown  = Bounce();
 
 
 
+//unsigned long SEND_FREQUENCY =    20000; // Minimum time between send (in milliseconds). We don't wnat to spam the gateway.
+double ppwh = ((double)PULSE_FACTOR)/1000; // Pulses per watt hour
+bool pcReceived = false;
+volatile unsigned long pulseCount = 0;
+volatile unsigned long lastBlink = 0;
+volatile unsigned long watt = 0;
+unsigned long oldPulseCount = 0;
+unsigned long oldWatt = 0;
+double oldKwh;
+unsigned long lastSend;
+
+int timeOfLastChange = 8;
 
 // Input Pins for Switch Markise Up/Down
 const int SwMarkUp = 8;
@@ -223,6 +240,7 @@ unsigned long currentTime = millis();
         MUp=true;
         MDown=false;
         //send(msgUp.set(1), 1);
+        mark.loop(MUp, MDown);
         Serial.print("Mup/");
         break;
 
@@ -230,6 +248,7 @@ unsigned long currentTime = millis();
         //setPosition(0);
         MDown=true;
         MUp=false;
+        mark.loop(MUp, MDown);
         //send(msgDown.set(1), 1);
         Serial.print("MDown/");
         break;
@@ -294,9 +313,9 @@ mark.setDisable(emergency);
 
 
 void receive(const MyMessage & message) {
-  if (message.sensor == CHILD_ID_SERVO) {
-    myservo.attach(SERVO_DIGITAL_OUT_PIN);
-    attachedServo = true;
+  if (message.sensor == CHILD_ID_MARKDWN) {
+//    myservo.attach(SERVO_DIGITAL_OUT_PIN);
+//    attachedServo = true;
     if (message.isAck()) {
       Serial.println("Ack from gw rec.");
     }
@@ -305,15 +324,19 @@ void receive(const MyMessage & message) {
       if (val > 3) {
         val = 3;
       };
+      MUp=true;
+      MDown=false;
+      mark.loop(MUp, MDown); // meine Lib um geregelt herauf / runterzufahren !
+      Serial.print("Mup/");
       //myservo.write(SERVO_MAX + (SERVO_MIN - SERVO_MAX) / 100 * val); // sets the servo position 0-180
-      myservo.write(SERVO_MAX + (SERVO_MIN - SERVO_MAX) / 100 * (130 - val * 40)); // sets the servo position 0-180
+      //myservo.write(SERVO_MAX + (SERVO_MIN - SERVO_MAX) / 100 * (130 - val * 40)); // sets the servo position 0-180
       // Write some debug info
       //Serial.print("Servo change; state: ");
       //Serial.println(val);
     }
     timeOfLastChange = millis();
   }
-  else if (message.sensor == CHILD_ID_GAS) {
+  else if (message.sensor == CHILD_ID_Rain) {
     if (message.type == V_VAR1) {
       pulseCount = message.getULong();
       flow = oldflow = 0;
