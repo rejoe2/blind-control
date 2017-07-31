@@ -128,8 +128,8 @@ float pressureAvg2;
 
 float dP_dt;
 bool metric = true;
-float temperature(NAN), humidity(NAN), pressure(NAN);
-uint8_t pressureUnit(3);                                          
+float temperature(NAN), humidity(NAN), pressureBme(NAN);
+uint8_t pressureUnit(1);                                          
 // unit: B000 = Pa, B001 = hPa, B010 = Hg, B011 = atm, B100 = bar, B101 = torr, B110 = N/m^2, B111 = psi
 
 MyMessage tempMsg(TEMP_CHILD, V_TEMP);
@@ -153,29 +153,6 @@ void before()
 	pinMode(SwEmergency, INPUT_PULLUP);
 	debounceMarkEmergency.attach(SwEmergency);
 	debounceMarkEmergency.interval(5);
-
-	/*pinMode(MarkDown, OUTPUT);
-    digitalWrite(MarkOn, HIGH);
-    pinMode(JalOn, OUTPUT);
-    pinMode(JalDown, OUTPUT);
-    digitalWrite(JalOn, HIGH);
-    digitalWrite(JalDown, HIGH);
-
-    pinMode(SwJalUp, INPUT_PULLUP);
-    pinMode(SwJalDown, INPUT_PULLUP);
-    pinMode(SwMarkUp, INPUT_PULLUP);
-    pinMode(SwMarkDown, INPUT_PULLUP);*/
-  
-  
-  // After setting up the button, setup debouncer
-  /*debounceMarkUp.attach(SwMarkUp);
-  debounceMarkUp.interval(5);
-  debounceMarkDown.attach(SwMarkDown);
-  debounceMarkDown.interval(5);
-  debounceJalUp.attach(SwJalUp);
-  debounceJalUp.interval(5);
-  debounceJalDown.attach(SwJalDown);
-  debounceJalDown.interval(5);*/
 
 	Wire.begin();
 	lightSensor.begin();
@@ -210,11 +187,7 @@ void loop()
 			button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
 		}
 	}
-/*  bool button_mark_up = digitalRead(SwMarkUp) == LOW;
-  bool button_mark_down = digitalRead(SwMarkDown) == LOW;
-  bool button_jal_up = digitalRead(SwJalUp) == LOW;
-  bool button_jal_down = digitalRead(SwJalDown) == LOW;*/
-  
+
 	bool emergency = digitalRead(SwEmergency) == LOW; //Current use: in case of rain
 
 	Cover[0].setDisable(emergency);
@@ -234,7 +207,7 @@ void loop()
 #endif
 		}
 		send(msgRain.set(emergency));
-		bme.read(pressure, temperature, humidity, metric, pressureUnit); //Parameters: (float& pressure, float& temp, float& humidity, bool celsius = false, uint8_t pressureUnit = 0x0)
+		bme.read(pressureBme, temperature, humidity, metric, pressureUnit); //Parameters: (float& pressure, float& temp, float& humidity, bool celsius = false, uint8_t pressureUnit = 0x0)
 		if (isnan(temperature)) {
 #ifdef MY_DEBUG_LOCAL
 			Serial.println("Failed reading temperature");
@@ -265,10 +238,10 @@ void loop()
 	}
 
 	if (currentTime - lastSendBme > bmeDelayTime) {
-		int forecast = sample(pressure);
-		if (pressure != lastPressure) {
-			send(pressureMsg.set(pressure, 2));
-			lastPressure = pressure;
+		int forecast = sample(pressureBme);
+		if (pressureBme != lastPressure) {
+			send(pressureMsg.set(pressureBme, 2));
+			lastPressure = pressureBme;
 		}
 
 		if (forecast != lastForecast){
