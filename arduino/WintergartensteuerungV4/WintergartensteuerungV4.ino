@@ -47,10 +47,7 @@ unsigned long lastSendBme = 0;
 
 // Input Pins for covers Up/Down
 // UP-Button, DOWN-Button
- const int INPUT_PINS[MAX_COVERS] = {
-   {3,4},
-   {7,6}
- };
+const int INPUT_PINS[][2] = { {3,4}, {7,6}};
 /*const int SwMarkUp = 3;
 const int SwMarkDown = 4;
 // Input Pins for Switch Jalosie Up/Down
@@ -60,11 +57,10 @@ const int SwJalDown = 6;*/
 const int SwEmergency = 5;
 
 // Output Pins
-// Cover_ON, Cover_DOWN, ON_Time_Max
-const int OUT_INFOS[MAX_COVERS] = {
-   {10,12,16000},
-   {11,13,16000}
- };
+// Cover_ON, Cover_DOWN,
+
+//const unsigned long ON_Time_Max = 16000;
+const int OUT_INFOS[][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
 //const int JalRevers = 12;
@@ -76,15 +72,17 @@ bool DownStates[MAX_COVERS] = {0};
 bool ReverseStates[MAX_COVERS] = {0};
 bool EmergencyState = 0;
 
-Wgs Cover[MAX_COVERS]= OUT_INFOS[MAX_COVERS];
-
+Wgs Cover[MAX_COVERS];
+/*for (int i = 0; i < MAX_COVERS; i++) {
+  Cover[i] = OUT_INFOS[i];
+}*/
 BH1750 lightSensor;
 uint16_t lastlux = 0;
 
-int State[MAX_COVERS] = {0};
-int oldState[MAX_COVERS] = {0};
-int status[MAX_COVERS] = {0};
-int oldStatus[MAX_COVERS] = {0};
+int State[MAX_COVERS-1] = {0};
+int oldState[MAX_COVERS-1] = {0};
+int status[MAX_COVERS-1] = {0};
+int oldStatus[MAX_COVERS-1] = {0};
 
 MyMessage upMessage(COVER_0_ID, V_UP);
 MyMessage downMessage(COVER_0_ID, V_DOWN);
@@ -139,37 +137,38 @@ MyMessage humMsg(HUM_CHILD, V_HUM);
 
 void before()
 {
-	// Initialize In-/Outputs
-	for (int i = 0; i < MAX_COVERS; i++) {
-		for (j=0; j<2; j++) {
-			pinMode(OUT_INFOS[i][j], OUTPUT);
-			digitalWrite(OUT_INFOS[i][j], HIGH);
-			pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
-			debounce[i][j] = Bounce();
-			debounce[i][j].attach(INPUT_PINS[i][j]);
-			debounce[i][j].interval(5);
-		}
-	}
-	pinMode(SwEmergency, INPUT_PULLUP);
-	debounceMarkEmergency.attach(SwEmergency);
-	debounceMarkEmergency.interval(5);
+  // Initialize In-/Outputs
+  for (int i = 0; i < MAX_COVERS; i++) {
+  Cover[i] = Wgs(OUT_INFOS[i][0],OUT_INFOS[i][1],16000);
+    for (int j=0; j<2; j++) {
+      pinMode(OUT_INFOS[i][j], OUTPUT);
+      digitalWrite(OUT_INFOS[i][j], HIGH);
+      pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
+      debounce[i][j] = Bounce();
+      debounce[i][j].attach(INPUT_PINS[i][j]);
+      debounce[i][j].interval(5);
+    }
+  }
+  pinMode(SwEmergency, INPUT_PULLUP);
+  debounceMarkEmergency.attach(SwEmergency);
+  debounceMarkEmergency.interval(5);
 
-	Wire.begin();
-	lightSensor.begin();
-	bme.begin();
+  Wire.begin();
+  lightSensor.begin();
+  bme.begin();
 }
 
 void presentation() {
-	sendSketchInfo(SN, SV);
-	present(CHILD_ID_LIGHT, S_LIGHT_LEVEL);
-	present(CHILD_ID_RAIN, S_RAIN);
-	for (int i = 0; i < MAX_COVERS; i++) {
-		present(COVER_0_ID+i, S_COVER);
-		present(COVER_0_ID+i, S_CUSTOM);
-	}
-	present(BARO_CHILD, S_BARO);
-	present(TEMP_CHILD, S_TEMP);
-	present(HUM_CHILD, S_HUM);
+  sendSketchInfo(SN, SV);
+  present(CHILD_ID_LIGHT, S_LIGHT_LEVEL);
+  present(CHILD_ID_RAIN, S_RAIN);
+  for (int i = 0; i < MAX_COVERS; i++) {
+    present(COVER_0_ID+i, S_COVER);
+    present(COVER_0_ID+i, S_CUSTOM);
+  }
+  present(BARO_CHILD, S_BARO);
+  present(TEMP_CHILD, S_TEMP);
+  present(HUM_CHILD, S_HUM);
 }
 
 void setup() {
@@ -181,80 +180,80 @@ void setup() {
 
 void loop()
 {
-	bool button[MAX_COVERS][1];
-	for (int i = 0; i < MAX_COVERS; i++) {
-		for (j=0; j<2; j++) {
-			button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
-		}
-	}
+  bool button[MAX_COVERS-1][1];
+  for (int i = 0; i < MAX_COVERS; i++) {
+    for (int j=0; j<2; j++) {
+      button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
+    }
+  }
 
-	bool emergency = digitalRead(SwEmergency) == LOW; //Current use: in case of rain
+  bool emergency = digitalRead(SwEmergency) == LOW; //Current use: in case of rain
 
-	Cover[0].setDisable(emergency);
+  Cover[0].setDisable(emergency);
 
-	unsigned long currentTime = millis();
+  unsigned long currentTime = millis();
 
-	// Only send values at a maximum frequency
-	if (currentTime - lastSend > SEND_FREQUENCY) {
-		lastSend = currentTime;
-		uint16_t lux = lightSensor.readLightLevel();// Get Lux value
-		if (lux != lastlux) {
-			send(msgLux.set(lux));
-			lastlux = lux;
+  // Only send values at a maximum frequency
+  if (currentTime - lastSend > SEND_FREQUENCY) {
+    lastSend = currentTime;
+    uint16_t lux = lightSensor.readLightLevel();// Get Lux value
+    if (lux != lastlux) {
+      send(msgLux.set(lux));
+      lastlux = lux;
 #ifdef MY_DEBUG_LOCAL
-			Serial.print("lux:");
-			Serial.println(lux);
+      Serial.print("lux:");
+      Serial.println(lux);
 #endif
-		}
-		send(msgRain.set(emergency));
-		bme.read(pressureBme, temperature, humidity, metric, pressureUnit); //Parameters: (float& pressure, float& temp, float& humidity, bool celsius = false, uint8_t pressureUnit = 0x0)
-		if (isnan(temperature)) {
+    }
+    send(msgRain.set(emergency));
+    bme.read(pressureBme, temperature, humidity, metric, pressureUnit); //Parameters: (float& pressure, float& temp, float& humidity, bool celsius = false, uint8_t pressureUnit = 0x0)
+    if (isnan(temperature)) {
 #ifdef MY_DEBUG_LOCAL
-			Serial.println("Failed reading temperature");
+      Serial.println("Failed reading temperature");
 #endif
-		} else if (temperature != lastTemp) {
-			// Only send temperature if it changed since the last measurement
-			lastTemp = temperature;
-			send(tempMsg.set(temperature, 1));
+    } else if (temperature != lastTemp) {
+      // Only send temperature if it changed since the last measurement
+      lastTemp = temperature;
+      send(tempMsg.set(temperature, 1));
 #ifdef MY_DEBUG_LOCAL
-			Serial.print("T: ");
-			Serial.println(temperature);
+      Serial.print("T: ");
+      Serial.println(temperature);
 #endif
-		}
+    }
     
-		if (isnan(humidity)) {
+    if (isnan(humidity)) {
 #ifdef MY_DEBUG_LOCAL
-			Serial.println("Failed reading humidity");
+      Serial.println("Failed reading humidity");
 #endif
-		} else if (humidity != lastHum) {
-		// Only send humidity if it changed since the last measurement
-			lastHum = humidity;
-			send(humMsg.set(humidity, 1));
+    } else if (humidity != lastHum) {
+    // Only send humidity if it changed since the last measurement
+      lastHum = humidity;
+      send(humMsg.set(humidity, 1));
 #ifdef MY_DEBUG
-			Serial.print("H: ");
-			Serial.println(humidity);
+      Serial.print("H: ");
+      Serial.println(humidity);
 #endif
-		}
-	}
+    }
+  }
 
-	if (currentTime - lastSendBme > bmeDelayTime) {
-		int forecast = sample(pressureBme);
-		if (pressureBme != lastPressure) {
-			send(pressureMsg.set(pressureBme, 2));
-			lastPressure = pressureBme;
-		}
+  if (currentTime - lastSendBme > bmeDelayTime) {
+    int forecast = sample(pressureBme);
+    if (pressureBme != lastPressure) {
+      send(pressureMsg.set(pressureBme, 2));
+      lastPressure = pressureBme;
+    }
 
-		if (forecast != lastForecast){
-			send(forecastMsg.set(weather[forecast]));
-			lastForecast = forecast;
-		}
-	}
+    if (forecast != lastForecast){
+      send(forecastMsg.set(weather[forecast]));
+      lastForecast = forecast;
+    }
+  }
 
-	//State[0]=Cover[0].loop(button_mark_up, button_mark_down);
-	for (int i = 0; i < MAX_COVERS; i++) {
-		State[i]=Cover[i].loop(button[i]);
-		if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
-			sendState(i, COVER_0_ID+i);
+  //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
+  for (int i = 0; i < MAX_COVERS; i++) {
+    State[i]=Cover[i].loop(button[i][0],button[i][1] );
+    if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
+      sendState(i, COVER_0_ID+i);
 /*
  * Hier könnte man einen Timer einfügen, der die Zeit erfaßt,
  * die das jeweilige Cover fährt und daraus einen %-Wert errechnen.
@@ -267,27 +266,27 @@ void loop()
  * mit einem Standardwert vorbelegen.
  * Zielwert bei Tastendruck löschen?
  */
-			oldState[i] = State[i];
-			oldStatus[i] = status[i];
+      oldState[i] = State[i];
+      oldStatus[i] = status[i];
 #ifdef MY_DEBUG_LOCAL
-			Serial.print("Button press C ");
-			Serial.println(i+COVER_0_ID);
-			Serial.print("Return: ");
-			Serial.println(State[i]);
+      Serial.print("Button press C ");
+      Serial.println(i+COVER_0_ID);
+      Serial.print("Return: ");
+      Serial.println(State[i]);
 #endif
-		}
-	}
+    }
+  }
 }
 
 void receive(const MyMessage &message) {
-	if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
-		if (message.isAck()) {
+  if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
+    if (message.isAck()) {
 #ifdef MY_DEBUG_LOCAL
-		Serial.println(F("Ack child1 from gw rec."));
+    Serial.println(F("Ack child1 from gw rec."));
 #endif
-		}
-		if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-			int val = message.getInt();
+    }
+    if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
+      int val = message.getInt();
       /*
        * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
        * const int STATE_UNKNOWN = 0;
@@ -296,86 +295,86 @@ void receive(const MyMessage &message) {
           const int STATE_DISABLED = 3;
           const int STATE_ENABLING = 4;
        */
-			if (val < 50 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			//Down
-				if (State[message.sensor-COVER_0_ID] != 0) {
-					Cover[message.sensor-COVER_0_ID].loop(true, false);
-				}
-				Cover[message.sensor-COVER_0_ID].loop(true, false);
+      if (val < 50 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+      //Down
+        if (State[message.sensor-COVER_0_ID] != 0) {
+          Cover[message.sensor-COVER_0_ID].loop(true, false);
+        }
+        Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Message up: ");
-				Serial.println(val);
+        Serial.print("GW Message up: ");
+        Serial.println(val);
 #endif
-			}
-			else if (val == 50) {
-			//Stop
-				Cover[message.sensor-COVER_0_ID].loop(false, false);
+      }
+      else if (val == 50) {
+      //Stop
+        Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Message stop: ");
-				Serial.println(val);
+        Serial.print("GW Message stop: ");
+        Serial.println(val);
 #endif
-			}
-			else if (val >50 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			//Up
-				if (State[message.sensor-COVER_0_ID] != 0) {
-					Cover[message.sensor-COVER_0_ID].loop(false, true);
-				}
-				Cover[message.sensor-COVER_0_ID].loop(false, true);
+      }
+      else if (val >50 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+      //Up
+        if (State[message.sensor-COVER_0_ID] != 0) {
+          Cover[message.sensor-COVER_0_ID].loop(false, true);
+        }
+        Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Msg down: ");
-				Serial.println(val);
+        Serial.print("GW Msg down: ");
+        Serial.println(val);
 #endif
-			}
-		}
+      }
+    }
 
-		if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			Cover[message.sensor-COVER_0_ID].loop(true, false);
-			//sendState();
+    if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+      Cover[message.sensor-COVER_0_ID].loop(true, false);
+      //sendState();
 #ifdef MY_DEBUG_LOCAL
-			Serial.print("GW Msg up, C ");
-			Serial.println(message.sensor);
+      Serial.print("GW Msg up, C ");
+      Serial.println(message.sensor);
 #endif
-		}
-		if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			Cover[message.sensor-COVER_0_ID].loop(false, true);
+    }
+    if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+      Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-			Serial.print(F("GW Msg down, C "));
-			Serial.println(message.sensor);
+      Serial.print(F("GW Msg down, C "));
+      Serial.println(message.sensor);
 #endif
-		}
-		if (message.type == V_STOP) {
-			Cover[message.sensor-COVER_0_ID].loop(false, false);
+    }
+    if (message.type == V_STOP) {
+      Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-			Serial.print(F("GW Msg stop, C "));
-			Serial.println(message.sensor);
+      Serial.print(F("GW Msg stop, C "));
+      Serial.println(message.sensor);
 #endif
-		}
-	}
+    }
+  }
 }
 
+enum State {
+  IDLE,
+  UP, // Window covering. Up.
+  DOWN, // Window covering. Down.
+};
+
 void sendState(int val1, int sensorID) {
-	// Send current state and status to gateway.
-	send(upMessage.setSensor(sensorID).set(State[val1] == UP));
-	send(downMessage.setSensor(sensorID).set(State[val1] == DOWN));
-	send(stopMessage.setSensor(sensorID).set(State[val1] == IDLE));
-	send(statusMessage.setSensor(sensorID).set(status[val1]));
+  // Send current state and status to gateway.
+  send(upMessage.setSensor(sensorID).set(State[val1] == UP));
+  send(downMessage.setSensor(sensorID).set(State[val1] == DOWN));
+  send(stopMessage.setSensor(sensorID).set(State[val1] == IDLE));
+  send(statusMessage.setSensor(sensorID).set(status[val1]));
 }
 
 byte decToBcd(byte val)
 {
-	return( (val/10*16) + (val%10) );
+  return( (val/10*16) + (val%10) );
 }
 // Convert binary coded decimal to normal decimal numbers
 byte bcdToDec(byte val)
 {
-	return( (val/16*10) + (val%16) );
+  return( (val/16*10) + (val%16) );
 }
-
-enum State {
-	IDLE,
-	UP, // Window covering. Up.
-	DOWN, // Window covering. Down.
-};
 
 enum FORECAST
 {
@@ -540,4 +539,4 @@ int sample(float pressure)
   //Serial.println(weather[forecast]);
 
   return forecast;
-}*/
+}
