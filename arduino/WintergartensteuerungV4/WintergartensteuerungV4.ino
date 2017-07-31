@@ -96,7 +96,7 @@ MyMessage msgLux(CHILD_ID_LIGHT, V_LIGHT_LEVEL);
 /*Auck keine Ahnung, ob Bounce mit einem Anlegen
  * über ein Array klarkäme
  */
-Bounce debounce[MAX_COVERS][1]= {Bounce()};
+Bounce debounce[MAX_COVERS][1];
 /*Bounce debounceJalDown  = Bounce();
 Bounce debounceMarkUp    = Bounce();
 Bounce debounceMarkDown  = Bounce();*/
@@ -145,6 +145,7 @@ void before()
 			pinMode(OUT_INFOS[i][j], OUTPUT);
 			digitalWrite(OUT_INFOS[i][j], HIGH);
 			pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
+			debounce[i][j] = Bounce();
 			debounce[i][j].attach(INPUT_PINS[i][j]);
 			debounce[i][j].interval(5);
 		}
