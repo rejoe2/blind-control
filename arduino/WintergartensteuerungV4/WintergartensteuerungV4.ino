@@ -25,7 +25,7 @@
 #include "Wgs.h"
 #include <Wire.h> //warum andere Schreibweise? => Arduino IDE sagt: "Wire.h" bedeutet: liegt im gleichen Verzeichnis <Wire.h> liegt im lib-Verzeichnis. M.E. ist es als <Wire.h> richtig
 #include <BME280I2C.h> // From Library Manager, comes with the BME280-lib by Tyler Glenn
-
+//#define MY_FORECAST
 #include <MySensors.h>
 
 //für die millis()-Berechnung, wann wieder gesendet werden soll
@@ -47,7 +47,7 @@ unsigned long lastSendBme = 0;
 
 // Input Pins for covers Up/Down
 // UP-Button, DOWN-Button
-const int INPUT_PINS[][2] = { {3,4}, {7,6}};
+const uint8_t INPUT_PINS[][2] = { {3,4}, {7,6}};
 /*const int SwMarkUp = 3;
 const int SwMarkDown = 4;
 // Input Pins for Switch Jalosie Up/Down
@@ -60,7 +60,7 @@ const int SwEmergency = 5;
 // Cover_ON, Cover_DOWN,
 
 //const unsigned long ON_Time_Max = 16000;
-const int OUT_INFOS[][2] = {{10,12}, {11,13}} ;
+const uint8_t OUT_INFOS[][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
 //const int JalRevers = 12;
@@ -79,10 +79,10 @@ Wgs Cover[MAX_COVERS];
 BH1750 lightSensor;
 uint16_t lastlux = 0;
 
-int State[MAX_COVERS-1] = {0};
-int oldState[MAX_COVERS-1] = {0};
-int status[MAX_COVERS-1] = {0};
-int oldStatus[MAX_COVERS-1] = {0};
+uint8_t State[MAX_COVERS] = {0};
+uint8_t oldState[MAX_COVERS] = {0};
+uint8_t status[MAX_COVERS] = {0};
+uint8_t oldStatus[MAX_COVERS] = {0};
 
 MyMessage upMessage(COVER_0_ID, V_UP);
 MyMessage downMessage(COVER_0_ID, V_DOWN);
@@ -101,17 +101,17 @@ Bounce debounceMarkDown  = Bounce();*/
 
 Bounce debounceMarkEmergency  = Bounce();
 
+float lastPressure = -1;
+float lastTemp = -1;
+float lastHum = -1;
+
+#ifdef MY_FORECAST
 //bme: Value according to MySensors for forecast accuracy; do not change
 unsigned long bmeDelayTime = 60000;
 
 const char *weather[] = { "stable", "sunny", "cloudy", "unstable", "thunderstorm", "unknown" };
-
-float lastPressure = -1;
-float lastTemp = -1;
-float lastHum = -1;
-int lastForecast = -1;
-
-const int LAST_SAMPLES_COUNT = 5;
+uint8_t lastForecast = -1;
+const uint8_t LAST_SAMPLES_COUNT = 5;
 float lastPressureSamples[LAST_SAMPLES_COUNT];
 // this CONVERSION_FACTOR is used to convert from Pa to kPa in forecast algorithm
 // get kPa/h be dividing hPa by 10
@@ -125,6 +125,9 @@ float pressureAvg;
 float pressureAvg2;
 
 float dP_dt;
+MyMessage forecastMsg(BARO_CHILD, V_FORECAST);
+#endif
+
 bool metric = true;
 float temperature(NAN), humidity(NAN), pressureBme(NAN);
 uint8_t pressureUnit(1);                                          
@@ -132,15 +135,14 @@ uint8_t pressureUnit(1);
 
 MyMessage tempMsg(TEMP_CHILD, V_TEMP);
 MyMessage pressureMsg(BARO_CHILD, V_PRESSURE);
-MyMessage forecastMsg(BARO_CHILD, V_FORECAST);
 MyMessage humMsg(HUM_CHILD, V_HUM);
 
 void before()
 {
   // Initialize In-/Outputs
-  for (int i = 0; i < MAX_COVERS; i++) {
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
   Cover[i] = Wgs(OUT_INFOS[i][0],OUT_INFOS[i][1],16000);
-    for (int j=0; j<2; j++) {
+    for (uint8_t j=0; j<2; j++) {
       pinMode(OUT_INFOS[i][j], OUTPUT);
       digitalWrite(OUT_INFOS[i][j], HIGH);
       pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
@@ -162,7 +164,7 @@ void presentation() {
   sendSketchInfo(SN, SV);
   present(CHILD_ID_LIGHT, S_LIGHT_LEVEL);
   present(CHILD_ID_RAIN, S_RAIN);
-  for (int i = 0; i < MAX_COVERS; i++) {
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
     present(COVER_0_ID+i, S_COVER);
     present(COVER_0_ID+i, S_CUSTOM);
   }
@@ -172,7 +174,7 @@ void presentation() {
 }
 
 void setup() {
-  for (int i = 0; i < MAX_COVERS; i++) {
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
     sendState(i, COVER_0_ID+i);
   }
   metric = getControllerConfig().isMetric;
@@ -181,8 +183,8 @@ void setup() {
 void loop()
 {
   bool button[MAX_COVERS-1][1];
-  for (int i = 0; i < MAX_COVERS; i++) {
-    for (int j=0; j<2; j++) {
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
+    for (uint8_t j=0; j<2; j++) {
       button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
     }
   }
@@ -234,23 +236,34 @@ void loop()
       Serial.println(humidity);
 #endif
     }
+#ifndef MY_FORECAST
+    if (isnan(pressureBme)) {
+#ifdef MY_DEBUG_LOCAL
+      Serial.println("Failed reading pressure");
+#endif
+    if (pressureBme != lastPressure) {
+      send(pressureMsg.set(pressureBme, 2));
+      lastPressure = pressureBme;
+    }
+#endif
   }
 
+#ifdef MY_FORECAST
   if (currentTime - lastSendBme > bmeDelayTime) {
     int forecast = sample(pressureBme);
     if (pressureBme != lastPressure) {
       send(pressureMsg.set(pressureBme, 2));
       lastPressure = pressureBme;
     }
-
     if (forecast != lastForecast){
       send(forecastMsg.set(weather[forecast]));
       lastForecast = forecast;
     }
+#endif
   }
 
   //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
-  for (int i = 0; i < MAX_COVERS; i++) {
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
     State[i]=Cover[i].loop(button[i][0],button[i][1] );
     if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
       sendState(i, COVER_0_ID+i);
@@ -376,6 +389,7 @@ byte bcdToDec(byte val)
   return( (val/16*10) + (val%16) );
 }
 
+#ifdef MY_FORECAST
 enum FORECAST
 {
     STABLE = 0,            // "Stable Weather Pattern"
@@ -540,3 +554,4 @@ int sample(float pressure)
 
   return forecast;
 }
+#endif
