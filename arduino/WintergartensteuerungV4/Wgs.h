@@ -15,6 +15,7 @@ class Wgs
     void setPins(uint8_t pin_on, uint8_t pin_down, long duration);
     Wgs(uint8_t pin_on, uint8_t pin_down, long duration);
     int loop(bool button_disable, bool button_enable);
+    int getState();
     void setDisable(boolean b);
     void startMovement(int state);
     void stopMovement(int state);
