@@ -23,9 +23,13 @@
 #include <BH1750.h>
 #include <Bounce2.h>
 #include "Wgs.h"
-#include <Wire.h> //warum andere Schreibweise? => Arduino IDE sagt: "Wire.h" bedeutet: liegt im gleichen Verzeichnis <Wire.h> liegt im lib-Verzeichnis. M.E. ist es als <Wire.h> richtig
+//#define MY_BME_ENABLED
+#ifdef MY_BME_ENABLED
 #include <BME280I2C.h> // From Library Manager, comes with the BME280-lib by Tyler Glenn
 //#define MY_FORECAST
+#endif
+
+#include <Wire.h> //warum andere Schreibweise? => Arduino IDE sagt: "Wire.h" bedeutet: liegt im gleichen Verzeichnis <Wire.h> liegt im lib-Verzeichnis. M.E. ist es als <Wire.h> richtig
 #include <MySensors.h>
 
 //für die millis()-Berechnung, wann wieder gesendet werden soll
@@ -37,13 +41,14 @@ unsigned long lastSend = 0;
 #define COVER_0_ID 2
 #define MAX_COVERS 2
 
+#ifdef MY_BME_ENABLED
 #define BARO_CHILD 10
 #define TEMP_CHILD 11
 #define HUM_CHILD 12
-
 BME280I2C bme;
 unsigned long lastSendBme = 0;
 //#define SEALEVELPRESSURE_HPA (1013.25)
+#endif
 
 // Input Pins for covers Up/Down
 // UP-Button, DOWN-Button
@@ -54,13 +59,13 @@ const int SwMarkDown = 4;
 const int SwJalUp = 7;
 const int SwJalDown = 6;*/
 //Notfall
-const int SwEmergency = 5;
+const uint8_t SwEmergency = 5;
 
 // Output Pins
 // Cover_ON, Cover_DOWN,
 
 //const unsigned long ON_Time_Max = 16000;
-const uint8_t OUT_INFOS[][2] = {{10,12}, {11,13}} ;
+const uint8_t OUTPUT_PINS[][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
 //const int JalRevers = 12;
@@ -73,9 +78,7 @@ bool ReverseStates[MAX_COVERS] = {0};
 bool EmergencyState = 0;
 
 Wgs Cover[MAX_COVERS];
-/*for (int i = 0; i < MAX_COVERS; i++) {
-  Cover[i] = OUT_INFOS[i];
-}*/
+
 BH1750 lightSensor;
 uint16_t lastlux = 0;
 
@@ -94,17 +97,25 @@ MyMessage msgLux(CHILD_ID_LIGHT, V_LIGHT_LEVEL);
 /*Auck keine Ahnung, ob Bounce mit einem Anlegen
  * über ein Array klarkäme
  */
-Bounce debounce[MAX_COVERS][1];
+Bounce debounce[MAX_COVERS][2];
 /*Bounce debounceJalDown  = Bounce();
 Bounce debounceMarkUp    = Bounce();
 Bounce debounceMarkDown  = Bounce();*/
 
 Bounce debounceMarkEmergency  = Bounce();
 
+#ifdef MY_BME_ENABLED
 float lastPressure = -1;
 float lastTemp = -1;
 float lastHum = -1;
+float temperature(NAN), humidity(NAN), pressureBme(NAN);
+uint8_t pressureUnit(1);                                          
+// unit: B000 = Pa, B001 = hPa, B010 = Hg, B011 = atm, B100 = bar, B101 = torr, B110 = N/m^2, B111 = psi
 
+MyMessage tempMsg(TEMP_CHILD, V_TEMP);
+MyMessage pressureMsg(BARO_CHILD, V_PRESSURE);
+MyMessage humMsg(HUM_CHILD, V_HUM);
+#endif
 #ifdef MY_FORECAST
 //bme: Value according to MySensors for forecast accuracy; do not change
 unsigned long bmeDelayTime = 60000;
@@ -129,22 +140,15 @@ MyMessage forecastMsg(BARO_CHILD, V_FORECAST);
 #endif
 
 bool metric = true;
-float temperature(NAN), humidity(NAN), pressureBme(NAN);
-uint8_t pressureUnit(1);                                          
-// unit: B000 = Pa, B001 = hPa, B010 = Hg, B011 = atm, B100 = bar, B101 = torr, B110 = N/m^2, B111 = psi
-
-MyMessage tempMsg(TEMP_CHILD, V_TEMP);
-MyMessage pressureMsg(BARO_CHILD, V_PRESSURE);
-MyMessage humMsg(HUM_CHILD, V_HUM);
 
 void before()
 {
   // Initialize In-/Outputs
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-  Cover[i] = Wgs(OUT_INFOS[i][0],OUT_INFOS[i][1],16000);
+  Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
     for (uint8_t j=0; j<2; j++) {
-      pinMode(OUT_INFOS[i][j], OUTPUT);
-      digitalWrite(OUT_INFOS[i][j], HIGH);
+      pinMode(OUTPUT_PINS[i][j], OUTPUT);
+      digitalWrite(OUTPUT_PINS[i][j], HIGH);
       pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
       debounce[i][j] = Bounce();
       debounce[i][j].attach(INPUT_PINS[i][j]);
@@ -157,7 +161,9 @@ void before()
 
   Wire.begin();
   lightSensor.begin();
+#ifdef MY_BME_ENABLED
   bme.begin();
+#endif
 }
 
 void presentation() {
@@ -168,9 +174,11 @@ void presentation() {
     present(COVER_0_ID+i, S_COVER);
     present(COVER_0_ID+i, S_CUSTOM);
   }
+#ifdef MY_BME_ENABLED
   present(BARO_CHILD, S_BARO);
   present(TEMP_CHILD, S_TEMP);
   present(HUM_CHILD, S_HUM);
+#endif
 }
 
 void setup() {
@@ -182,7 +190,7 @@ void setup() {
 
 void loop()
 {
-  bool button[MAX_COVERS-1][1];
+  bool button[MAX_COVERS][2];
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     for (uint8_t j=0; j<2; j++) {
       button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
@@ -208,6 +216,7 @@ void loop()
 #endif
     }
     send(msgRain.set(emergency));
+#ifdef MY_BME_ENABLED
     bme.read(pressureBme, temperature, humidity, metric, pressureUnit); //Parameters: (float& pressure, float& temp, float& humidity, bool celsius = false, uint8_t pressureUnit = 0x0)
     if (isnan(temperature)) {
 #ifdef MY_DEBUG_LOCAL
@@ -236,6 +245,7 @@ void loop()
       Serial.println(humidity);
 #endif
     }
+#endif
 #ifndef MY_FORECAST
     if (isnan(pressureBme)) {
 #ifdef MY_DEBUG_LOCAL
@@ -245,8 +255,8 @@ void loop()
       send(pressureMsg.set(pressureBme, 2));
       lastPressure = pressureBme;
     }
-#endif
   }
+#endif
 
 #ifdef MY_FORECAST
   if (currentTime - lastSendBme > bmeDelayTime) {
@@ -259,8 +269,8 @@ void loop()
       send(forecastMsg.set(weather[forecast]));
       lastForecast = forecast;
     }
-#endif
   }
+#endif
 
   //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
