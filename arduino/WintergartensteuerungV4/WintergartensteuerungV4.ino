@@ -302,77 +302,83 @@ void loop()
 }
 
 void receive(const MyMessage &message) {
-  if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
-    if (message.isAck()) {
+	if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
+		if (message.isAck()) {
 #ifdef MY_DEBUG_LOCAL
-    Serial.println(F("Ack child1 from gw rec."));
+		Serial.println(F("Ack child1 from gw rec."));
 #endif
-    }
-    if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-      int val = message.getInt();
-      /*
-       * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
-       * const int STATE_UNKNOWN = 0;
+		}
+		if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
+		int val = message.getInt();
+		/*
+		* Die State-Bezüge sind "geraten", es sollte lt cpp sein:
+		* const int STATE_UNKNOWN = 0;
           const int STATE_ENABLED = 1;
           const int STATE_DISABLING = 2;
           const int STATE_DISABLED = 3;
           const int STATE_ENABLING = 4;
-       */
-      if (val < 50 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-      //Down
-        if (State[message.sensor-COVER_0_ID] != 0) {
-          Cover[message.sensor-COVER_0_ID].loop(true, false);
-        }
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+		*/
+			if (val < 50 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			//Down
+				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					Cover[message.sensor-COVER_0_ID].loop(true, false);
+				}
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Message up: ");
-        Serial.println(val);
+				Serial.print("GW Message up: ");
+				Serial.println(val);
 #endif
-      }
-      else if (val == 50) {
-      //Stop
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+			}
+			else if (val == 50) {
+			//Stop
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Message stop: ");
-        Serial.println(val);
+				Serial.print("GW Message stop: ");
+				Serial.println(val);
 #endif
-      }
-      else if (val >50 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-      //Up
-        if (State[message.sensor-COVER_0_ID] != 0) {
-          Cover[message.sensor-COVER_0_ID].loop(false, true);
-        }
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+			}
+			else if (val >50 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+			//Up
+				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					Cover[message.sensor-COVER_0_ID].loop(false, true);
+				}
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Msg down: ");
-        Serial.println(val);
+				Serial.print("GW Msg down: ");
+				Serial.println(val);
 #endif
-      }
-    }
+			}
+		}
 
-    if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
-      //sendState();
+		if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+				Cover[message.sensor-COVER_0_ID].loop(false, true);
+			}
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+			//sendState();
 #ifdef MY_DEBUG_LOCAL
-      Serial.print("GW Msg up, C ");
-      Serial.println(message.sensor);
+			Serial.print("GW Msg up, C ");
+			Serial.println(message.sensor);
 #endif
-    }
-    if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+		}
+		if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+				Cover[message.sensor-COVER_0_ID].loop(true, false);
+			}
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-      Serial.print(F("GW Msg down, C "));
-      Serial.println(message.sensor);
+			Serial.print(F("GW Msg down, C "));
+			Serial.println(message.sensor);
 #endif
-    }
-    if (message.type == V_STOP) {
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+		}
+		if (message.type == V_STOP) {
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-      Serial.print(F("GW Msg stop, C "));
-      Serial.println(message.sensor);
+			Serial.print(F("GW Msg stop, C "));
+			Serial.println(message.sensor);
 #endif
-    }
-  }
+		}
+	}
 }
 
 enum State {
