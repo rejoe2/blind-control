@@ -323,7 +323,7 @@ void receive(const MyMessage &message) {
         if (State[message.sensor-COVER_0_ID] != 0) {
           Cover[message.sensor-COVER_0_ID].loop(true, false);
         }
-        Cover[message.sensor-COVER_0_ID].loop(true, false);
+        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
         Serial.print("GW Message up: ");
         Serial.println(val);
@@ -331,7 +331,7 @@ void receive(const MyMessage &message) {
       }
       else if (val == 50) {
       //Stop
-        Cover[message.sensor-COVER_0_ID].loop(false, false);
+        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
         Serial.print("GW Message stop: ");
         Serial.println(val);
@@ -342,7 +342,7 @@ void receive(const MyMessage &message) {
         if (State[message.sensor-COVER_0_ID] != 0) {
           Cover[message.sensor-COVER_0_ID].loop(false, true);
         }
-        Cover[message.sensor-COVER_0_ID].loop(false, true);
+        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
         Serial.print("GW Msg down: ");
         Serial.println(val);
@@ -351,7 +351,7 @@ void receive(const MyMessage &message) {
     }
 
     if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-      Cover[message.sensor-COVER_0_ID].loop(true, false);
+      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
       //sendState();
 #ifdef MY_DEBUG_LOCAL
       Serial.print("GW Msg up, C ");
@@ -359,14 +359,14 @@ void receive(const MyMessage &message) {
 #endif
     }
     if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-      Cover[message.sensor-COVER_0_ID].loop(false, true);
+      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
       Serial.print(F("GW Msg down, C "));
       Serial.println(message.sensor);
 #endif
     }
     if (message.type == V_STOP) {
-      Cover[message.sensor-COVER_0_ID].loop(false, false);
+      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
       Serial.print(F("GW Msg stop, C "));
       Serial.println(message.sensor);
