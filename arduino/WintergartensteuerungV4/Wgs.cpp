@@ -156,3 +156,8 @@ void Wgs::setState(int i)  //-1 = unknown. 0 = enabled; 1 = move_disable; 2 = di
 {
 	_state = i;
 }
+
+int Wgs::getState();
+{
+	return _state;
+}
