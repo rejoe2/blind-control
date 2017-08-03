@@ -190,14 +190,15 @@ void setup() {
 
 void loop()
 {
-  bool button[MAX_COVERS][2];
+  //bool button[MAX_COVERS][2];
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     for (uint8_t j=0; j<2; j++) {
-      button[i][j] = digitalRead(INPUT_PINS[i][j]) == LOW;
+      debounce[i][j].update()
+      //button[i][j] = debounce[i][j].read() == LOW;
     }
   }
-
-  bool emergency = digitalRead(SwEmergency) == LOW; //Current use: in case of rain
+  debounceMarkEmergency.update()
+  bool emergency = debounceMarkEmergency.read() == LOW; //Current use: in case of rain
 
   Cover[0].setDisable(emergency);
 
@@ -274,7 +275,8 @@ void loop()
 
   //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-    State[i]=Cover[i].loop(button[i][0],button[i][1] );
+    State[i]=Cover[i].loop(debounce[i][0].read(),debounce[i][1].read());
+	  //State[i]=Cover[i].loop(button[i][0],button[i][1] );
     if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
       sendState(i, COVER_0_ID+i);
 /*
