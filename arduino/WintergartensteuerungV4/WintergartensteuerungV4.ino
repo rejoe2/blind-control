@@ -4,11 +4,11 @@
  * Weitestgehend auf Arrays umgebaut
  */
 
-#define SN "DoubleCover"
+#define SN "MultiCover"
 #define SV "0.4.0"
 
-//#define MY_DEBUG
-//#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
+#define MY_DEBUG
+#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
 // Enable RS485 transport layer
 #define MY_RS485
 //#define MY_RS485_HWSERIAL Serial
@@ -52,7 +52,7 @@ unsigned long lastSendBme = 0;
 
 // Input Pins for covers Up/Down
 // UP-Button, DOWN-Button
-const uint8_t INPUT_PINS[][2] = { {3,4}, {7,6}};
+const uint8_t INPUT_PINS[][2] = { {4,3}, {6,7}};
 /*const int SwMarkUp = 3;
 const int SwMarkDown = 4;
 // Input Pins for Switch Jalosie Up/Down
@@ -64,18 +64,19 @@ const uint8_t SwEmergency = 5;
 // Output Pins
 // Cover_ON, Cover_DOWN,
 
+bool UpStates[MAX_COVERS] = {0};
+bool DownStates[MAX_COVERS] = {0};
+bool ReverseStates[MAX_COVERS] = {0};
+bool EmergencyState = 0;
+
 //const unsigned long ON_Time_Max = 16000;
-const uint8_t OUTPUT_PINS[][2] = {{10,12}, {11,13}} ;
+const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
 //const int JalRevers = 12;
 const int MarkOn = 11; // activates relais 4
 const int MarkDown = 13; // activates relais 3+4
  */
-bool UpStates[MAX_COVERS] = {0};
-bool DownStates[MAX_COVERS] = {0};
-bool ReverseStates[MAX_COVERS] = {0};
-bool EmergencyState = 0;
 
 Wgs Cover[MAX_COVERS];
 
@@ -198,11 +199,11 @@ void setup() {
 
 void loop()
 {
-  //bool button[MAX_COVERS][2];
+  bool button[MAX_COVERS][2];
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     for (uint8_t j=0; j<2; j++) {
       debounce[i][j].update();
-      //button[i][j] = debounce[i][j].read() == LOW;
+      button[i][j] = debounce[i][j].read() == LOW;
     }
   }
   debounceMarkEmergency.update();
@@ -284,8 +285,8 @@ void loop()
   }
   //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-    State[i]=Cover[i].loop(debounce[i][0].read(),debounce[i][1].read());
-    //State[i]=Cover[i].loop(button[i][0],button[i][1] );
+    //State[i]=Cover[i].loop(debounce[i][0].read(),debounce[i][1].read());
+    State[i]=Cover[i].loop(button[i][0],button[i][1] );
     if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
       sendState(i, COVER_0_ID+i);
 /*
