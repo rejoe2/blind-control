@@ -4,7 +4,7 @@
  * Auf Arrays umgebaut
  * Vom Controller aus deaktivierbare Regensensorik => V_VAR1
  * Div. Vorbereitungen für Laufzeit-Berechnungen 
- * Fahrbefehle geändert (schließen = 0, hoch = 100, stop = -1)
+ * Fahrbefehle geändert (schließen = 0, hoch = 100, stop = 0.5)
  */
 
 #define SN "MultiCover"
@@ -12,6 +12,7 @@
 
 //#define MY_DEBUG
 //#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
+#define MY_DEBUG_ACTUAL //Für lokale Debug-Ausgaben
 // Enable RS485 transport layer
 #define MY_RS485
 //#define MY_RS485_HWSERIAL Serial
@@ -72,7 +73,6 @@ bool DownStates[MAX_COVERS] = {0};
 bool ReverseStates[MAX_COVERS] = {0};
 bool receivedLastLevel[MAX_COVERS] = {false};
 bool EmergencyEnable[MAX_COVERS] = {false};
-
 //const unsigned long ON_Time_Max = 16000;
 const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
@@ -139,6 +139,20 @@ MyMessage forecastMsg(BARO_CHILD, V_FORECAST);
 
 bool metric = true;
 
+void driveToTarget(const uint8_t cover, const uint8_t targetPos) 
+{
+/* Ablauf:
+- Position bestimmen => rauf bzw. runter?
+- Soll-Laufzeit errechnen
+- ggf. stoppen und Gegenrichtung veranlassen
+- neue _finish_time errechnen und setzen
+*/  
+  
+  //Position bestimmen
+  //if 
+
+}
+
 void sendState(int val1, int sensorID) {
   // Send current state and status to gateway.
   send(upMessage.setSensor(sensorID).set(State[val1] == 2));
@@ -160,7 +174,7 @@ void before()
       debounce[i][j].attach(INPUT_PINS[i][j]);
       debounce[i][j].interval(5);
     }
-	bool EmergencyEnable[i] = loadState(COVER_0_ID+1);
+	EmergencyEnable[i] = loadState(COVER_0_ID+1);
   }
   pinMode(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.attach(SwEmergency);
@@ -211,7 +225,7 @@ void loop()
 	  }
       button[i][j] = debounce[i][j].read() == LOW;
 	}
-  if (EmergencyEnable[i]) Cover[i].setDisable(emergency);
+  if (EmergencyEnable[i] == 1) Cover[i].setDisable(emergency);
   }
 
   unsigned long currentTime = millis();
@@ -325,92 +339,105 @@ void receive(const MyMessage &message) {
 #endif
     }
     if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-		int val = message.getInt();
-		if (receivedLastLevel[message.sensor-COVER_0_ID]) {
-			/*
-			* Die State-Bezüge sind "geraten", es sollte lt cpp sein:
-			* const int STATE_UNKNOWN = 0;
-				const int STATE_ENABLED = 1;
-				const int STATE_DISABLING = 2;
-				const int STATE_DISABLED = 3;
-				const int STATE_ENABLING = 4;
-			*/
-			if (val == -1) {
-			//Stop
-				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
-#ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Message stop: ");
-				Serial.println(val);
+		  int val = message.getInt();
+		  if (receivedLastLevel[message.sensor-COVER_0_ID]) {
+			  /*
+			  * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
+			  * const int STATE_UNKNOWN = 0;
+				  const int STATE_ENABLED = 1;
+				  const int STATE_DISABLING = 2;
+				  const int STATE_DISABLED = 3;
+				  const int STATE_ENABLING = 4;
+			  */
+#ifdef MY_DEBUG_ACTUAL
+    Serial.println(message.getInt());
 #endif
-			}
+			  
+			  if (val == 0.5) {
+			  //Stop
+				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+#ifdef MY_DEBUG_LOCAL
+				  Serial.print("GW Message stop: ");
+				  Serial.println(val);
+#endif
+			  }
 		
-			else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			//Down
-				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-					Cover[message.sensor-COVER_0_ID].loop(true, false);
-				}
-				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+			  else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			  //Down
+				  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					  Cover[message.sensor-COVER_0_ID].loop(true, false);
+				  }
+				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Message up: ");
-				Serial.println(val);
+				  Serial.print("GW Message down: ");
+				  Serial.println(val);
 #endif
-			}
+			  }
 		
-			else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			//Up
-				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-					Cover[message.sensor-COVER_0_ID].loop(false, true);
-				}
-				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-#ifdef MY_DEBUG_LOCAL
-				Serial.print("GW Msg down: ");
-				Serial.println(val);
+			  else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+			  //Up
+#ifdef MY_DEBUG_ACTUAL
+          Serial.println(message.getInt());
+          Serial.print("Cover state: ");
+          Serial.println(Cover[message.sensor-COVER_0_ID].getState());
 #endif
-			} else {
-				driveToTarget(message.sensor-COVER_0_ID,val)
-			}
-		} 
-		else {
-			receivedLastLevel[message.sensor-COVER_0_ID] = true;	
-		}
+				  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					  Cover[message.sensor-COVER_0_ID].loop(false, true);
+				  }
+				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+#ifdef MY_DEBUG_LOCAL
+				  Serial.print("GW Msg up: ");
+				  Serial.println(val);
+#endif
+			  } else {
+				  driveToTarget(message.sensor-COVER_0_ID,val);
+			  }
+		  } 
+		  else {
+			  receivedLastLevel[message.sensor-COVER_0_ID] = true;	
+		  }
+    }
 
-		if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-			Cover[message.sensor-COVER_0_ID].loop(false, true);
-		}
-		State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-		//sendState();
+		else if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+		  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+			  Cover[message.sensor-COVER_0_ID].loop(false, true);
+		  }
+		  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+		  //sendState();
 #ifdef MY_DEBUG_LOCAL
-		Serial.print("GW Msg up, C ");
-		Serial.println(message.sensor);
+		  Serial.print("GW Msg up, C ");
+		  Serial.println(message.sensor);
 #endif
-		}
-		if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+		 }
+		 else if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			 if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
 				Cover[message.sensor-COVER_0_ID].loop(true, false);
-			}
-			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+		 }
+		 State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
 			Serial.print(F("GW Msg down, C "));
 			Serial.println(message.sensor);
 #endif
 		}
-		if (message.type == V_STOP) {
+		else if (message.type == V_STOP) {
 			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
 			Serial.print(F("GW Msg stop, C "));
 			Serial.println(message.sensor);
 #endif
 		}
-		if (message.type == V_VAR1){
-			if (message.getbool() != loadState(message.sensor-COVER_0_ID)) {
-				saveState(message.sensor-COVER_0_ID),EmergencyEnable[message.sensor-COVER_0_ID]);
-				EmergencyEnable[message.sensor-COVER_0_ID] = message.getbool();
+		else if (message.type == V_VAR1){
+			EmergencyEnable[message.sensor-COVER_0_ID] = message.getBool();    
+			if (EmergencyEnable[message.sensor-COVER_0_ID] != loadState(message.sensor-COVER_0_ID)) {
+			 saveState((message.sensor-COVER_0_ID),EmergencyEnable[message.sensor-COVER_0_ID]);
 			}
+#ifdef MY_DEBUG_ACTUAL
+      Serial.print("Cover emergency state: ");
+      Serial.println(EmergencyEnable[message.sensor-COVER_0_ID]);
+#endif
 		}
-	}
+  }
 }
-
 byte decToBcd(byte val)
 {
   return( (val/10*16) + (val%10) );
@@ -419,20 +446,6 @@ byte decToBcd(byte val)
 byte bcdToDec(byte val)
 {
   return( (val/16*10) + (val%16) );
-}
-
-void driveToTarget(const uint8_t cover, const uint8_t targetPos) 
-{
-/* Ablauf:
-- Position bestimmen => rauf bzw. runter?
-- Soll-Laufzeit errechnen
-- ggf. stoppen und Gegenrichtung veranlassen
-- neue _finish_time errechnen und setzen
-*/	
-	
-	//Position bestimmen
-	//if 
-
 }
 
 #ifdef MY_FORECAST
