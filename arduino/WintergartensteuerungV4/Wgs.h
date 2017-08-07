@@ -24,11 +24,12 @@ class Wgs
   private:
     int _pin_on;
     int _pin_down;
-	long _duration;
-	bool _disable;
-	int _state;
-	long _finish_time;
-	long _mute_time;
+  long _duration;
+  bool _disable;
+  int _state;
+  long _finish_time;
+  long _mute_time;
 };
 
 #endif
+
