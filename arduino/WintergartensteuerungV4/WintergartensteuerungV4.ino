@@ -1,11 +1,14 @@
 /*
  * Changelog: Kommentare zum weiteren Vorgehen eingefügt
- * BME280: neuer Anlauf
- * Weitestgehend auf Arrays umgebaut
+ * BME280: neuer Anlauf (BME in 2 Stufen deaktivierbar)
+ * Auf Arrays umgebaut
+ * Vom Controller aus deaktivierbare Regensensorik => V_VAR1
+ * Div. Vorbereitungen für Laufzeit-Berechnungen 
+ * Fahrbefehle geändert (schließen = 0, hoch = 100, stop = -1)
  */
 
 #define SN "MultiCover"
-#define SV "0.4.0"
+#define SV "0.4.01"
 
 //#define MY_DEBUG
 //#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
@@ -67,26 +70,24 @@ const uint8_t SwEmergency = 5;
 bool UpStates[MAX_COVERS] = {0};
 bool DownStates[MAX_COVERS] = {0};
 bool ReverseStates[MAX_COVERS] = {0};
-bool EmergencyState = 0;
+bool receivedLastLevel[MAX_COVERS] = {false};
+bool EmergencyEnable[MAX_COVERS] = {false};
 
 //const unsigned long ON_Time_Max = 16000;
 const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
-//const int JalRevers = 12;
 const int MarkOn = 11; // activates relais 4
 const int MarkDown = 13; // activates relais 3+4
  */
 
 Wgs Cover[MAX_COVERS];
 
-BH1750 lightSensor;
-uint16_t lastlux = 0;
-
 uint8_t State[MAX_COVERS] = {0};
 uint8_t oldState[MAX_COVERS] = {0};
 uint8_t status[MAX_COVERS] = {0};
 uint8_t oldStatus[MAX_COVERS] = {0};
+#define EEPROM_DEVICE_ADDR_START  64     // start byte in eeprom for timing storage
 
 MyMessage upMessage(COVER_0_ID, V_UP);
 MyMessage downMessage(COVER_0_ID, V_DOWN);
@@ -95,15 +96,11 @@ MyMessage statusMessage(COVER_0_ID, V_STATUS);
 MyMessage msgRain(CHILD_ID_RAIN, V_RAIN);
 MyMessage msgLux(CHILD_ID_LIGHT, V_LIGHT_LEVEL);
 
-/*Auck keine Ahnung, ob Bounce mit einem Anlegen
- * über ein Array klarkäme
- */
 Bounce debounce[MAX_COVERS][2];
-/*Bounce debounceJalDown  = Bounce();
-Bounce debounceMarkUp    = Bounce();
-Bounce debounceMarkDown  = Bounce();*/
-
 Bounce debounceMarkEmergency  = Bounce();
+
+BH1750 lightSensor;
+uint16_t lastlux = 0;
 
 #ifdef MY_BME_ENABLED
 float lastPressure = -1;
@@ -154,7 +151,7 @@ void before()
 {
   // Initialize In-/Outputs
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-  Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
+	Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
     for (uint8_t j=0; j<2; j++) {
       pinMode(OUTPUT_PINS[i][j], OUTPUT);
       digitalWrite(OUTPUT_PINS[i][j], HIGH);
@@ -163,6 +160,7 @@ void before()
       debounce[i][j].attach(INPUT_PINS[i][j]);
       debounce[i][j].interval(5);
     }
+	bool EmergencyEnable[i] = loadState(COVER_0_ID+1);
   }
   pinMode(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.attach(SwEmergency);
@@ -192,7 +190,8 @@ void presentation() {
 
 void setup() {
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-    sendState(i, COVER_0_ID+i);
+    //sendState(i, COVER_0_ID+i);
+	request(COVER_0_ID+i, V_PERCENTAGE);
   }
   metric = getControllerConfig().isMetric;
 }
@@ -200,16 +199,20 @@ void setup() {
 void loop()
 {
   bool button[MAX_COVERS][2];
-  for (uint8_t i = 0; i < MAX_COVERS; i++) {
-    for (uint8_t j=0; j<2; j++) {
-      debounce[i][j].update();
-      button[i][j] = debounce[i][j].read() == LOW;
-    }
-  }
+  bool bounceUpdate[MAX_COVERS] = {false}; //true, if button pressed
   debounceMarkEmergency.update();
   bool emergency = debounceMarkEmergency.read() == LOW; //Current use: in case of rain
 
-  Cover[0].setDisable(emergency);
+  for (uint8_t i = 0; i < MAX_COVERS; i++) {
+    for (uint8_t j=0; j<2; j++) {
+      debounce[i][j].update();
+	  if (!bounceUpdate){
+		  bounceUpdate[i] = debounce[i][j].read() == HIGH;
+	  }
+      button[i][j] = debounce[i][j].read() == LOW;
+	}
+  if (EmergencyEnable[i]) Cover[i].setDisable(emergency);
+  }
 
   unsigned long currentTime = millis();
 
@@ -322,76 +325,90 @@ void receive(const MyMessage &message) {
 #endif
     }
     if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-    int val = message.getInt();
-    /*
-    * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
-    * const int STATE_UNKNOWN = 0;
-          const int STATE_ENABLED = 1;
-          const int STATE_DISABLING = 2;
-          const int STATE_DISABLED = 3;
-          const int STATE_ENABLING = 4;
-    */
-      if (val < 50 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-      //Down
-        if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-          Cover[message.sensor-COVER_0_ID].loop(true, false);
-        }
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+		int val = message.getInt();
+		if (receivedLastLevel[message.sensor-COVER_0_ID]) {
+			/*
+			* Die State-Bezüge sind "geraten", es sollte lt cpp sein:
+			* const int STATE_UNKNOWN = 0;
+				const int STATE_ENABLED = 1;
+				const int STATE_DISABLING = 2;
+				const int STATE_DISABLED = 3;
+				const int STATE_ENABLING = 4;
+			*/
+			if (val == -1) {
+			//Stop
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Message up: ");
-        Serial.println(val);
+				Serial.print("GW Message stop: ");
+				Serial.println(val);
 #endif
-      }
-      else if (val == 50) {
-      //Stop
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+			}
+		
+			else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			//Down
+				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					Cover[message.sensor-COVER_0_ID].loop(true, false);
+				}
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Message stop: ");
-        Serial.println(val);
+				Serial.print("GW Message up: ");
+				Serial.println(val);
 #endif
-      }
-      else if (val >50 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-      //Up
-        if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-          Cover[message.sensor-COVER_0_ID].loop(false, true);
-        }
-        State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+			}
+		
+			else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+			//Up
+				if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+					Cover[message.sensor-COVER_0_ID].loop(false, true);
+				}
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-        Serial.print("GW Msg down: ");
-        Serial.println(val);
+				Serial.print("GW Msg down: ");
+				Serial.println(val);
 #endif
-      }
-    }
+			} else {
+				driveToTarget(message.sensor-COVER_0_ID,val)
+			}
+		} 
+		else {
+			receivedLastLevel[message.sensor-COVER_0_ID] = true;	
+		}
 
-    if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-      if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-        Cover[message.sensor-COVER_0_ID].loop(false, true);
-      }
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-      //sendState();
+		if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+			Cover[message.sensor-COVER_0_ID].loop(false, true);
+		}
+		State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+		//sendState();
 #ifdef MY_DEBUG_LOCAL
-      Serial.print("GW Msg up, C ");
-      Serial.println(message.sensor);
+		Serial.print("GW Msg up, C ");
+		Serial.println(message.sensor);
 #endif
-    }
-    if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-      if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-        Cover[message.sensor-COVER_0_ID].loop(true, false);
-      }
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+		}
+		if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+				Cover[message.sensor-COVER_0_ID].loop(true, false);
+			}
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-      Serial.print(F("GW Msg down, C "));
-      Serial.println(message.sensor);
+			Serial.print(F("GW Msg down, C "));
+			Serial.println(message.sensor);
 #endif
-    }
-    if (message.type == V_STOP) {
-      State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+		}
+		if (message.type == V_STOP) {
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_LOCAL
-      Serial.print(F("GW Msg stop, C "));
-      Serial.println(message.sensor);
+			Serial.print(F("GW Msg stop, C "));
+			Serial.println(message.sensor);
 #endif
-    }
-  }
+		}
+		if (message.type == V_VAR1){
+			if (message.getbool() != loadState(message.sensor-COVER_0_ID)) {
+				saveState(message.sensor-COVER_0_ID),EmergencyEnable[message.sensor-COVER_0_ID]);
+				EmergencyEnable[message.sensor-COVER_0_ID] = message.getbool();
+			}
+		}
+	}
 }
 
 byte decToBcd(byte val)
@@ -402,6 +419,20 @@ byte decToBcd(byte val)
 byte bcdToDec(byte val)
 {
   return( (val/16*10) + (val%16) );
+}
+
+void driveToTarget(const uint8_t cover, const uint8_t targetPos) 
+{
+/* Ablauf:
+- Position bestimmen => rauf bzw. runter?
+- Soll-Laufzeit errechnen
+- ggf. stoppen und Gegenrichtung veranlassen
+- neue _finish_time errechnen und setzen
+*/	
+	
+	//Position bestimmen
+	//if 
+
 }
 
 #ifdef MY_FORECAST
@@ -570,4 +601,3 @@ int sample(float pressure)
   return forecast;
 }
 #endif
-
