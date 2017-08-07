@@ -7,8 +7,8 @@
 #define SN "MultiCover"
 #define SV "0.4.0"
 
-#define MY_DEBUG
-#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
+//#define MY_DEBUG
+//#define MY_DEBUG_LOCAL //Für lokale Debug-Ausgaben
 // Enable RS485 transport layer
 #define MY_RS485
 //#define MY_RS485_HWSERIAL Serial
@@ -144,8 +144,8 @@ bool metric = true;
 
 void sendState(int val1, int sensorID) {
   // Send current state and status to gateway.
-  send(upMessage.setSensor(sensorID).set(State[val1] == 1));
-  send(downMessage.setSensor(sensorID).set(State[val1] == 3));
+  send(upMessage.setSensor(sensorID).set(State[val1] == 2));
+  send(downMessage.setSensor(sensorID).set(State[val1] == 4));
   send(stopMessage.setSensor(sensorID).set(State[val1] == 0));
   send(statusMessage.setSensor(sensorID).set(status[val1]));
 }
@@ -285,8 +285,9 @@ void loop()
   }
   //State[0]=Cover[0].loop(button_mark_up, button_mark_down);
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-    //State[i]=Cover[i].loop(debounce[i][0].read(),debounce[i][1].read());
-    State[i]=Cover[i].loop(button[i][0],button[i][1] );
+    //State[i]=Cover[i].loop(button[i][0],button[i][1] );
+    Cover[i].loop(button[i][0],button[i][1] );
+    State[i]=Cover[i].getState();
     if ( State[i] != oldState[i]||status[i] != oldStatus[i]) {
       sendState(i, COVER_0_ID+i);
 /*
@@ -569,3 +570,4 @@ int sample(float pressure)
   return forecast;
 }
 #endif
+

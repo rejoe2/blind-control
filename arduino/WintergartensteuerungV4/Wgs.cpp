@@ -161,3 +161,4 @@ int Wgs::getState()
 {
   return _state;
 }
+
