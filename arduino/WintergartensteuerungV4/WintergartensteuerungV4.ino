@@ -340,8 +340,10 @@ void receive(const MyMessage &message) {
     }
     if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
 		  int val = message.getInt();
-		  if (receivedLastLevel[message.sensor-COVER_0_ID]) {
-			  /*
+		  if (!receivedLastLevel[message.sensor-COVER_0_ID]) {
+			  receivedLastLevel[message.sensor-COVER_0_ID] = true;  
+      }
+      else {/*
 			  * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
 			  * const int STATE_UNKNOWN = 0;
 				  const int STATE_ENABLED = 1;
@@ -349,14 +351,11 @@ void receive(const MyMessage &message) {
 				  const int STATE_DISABLED = 3;
 				  const int STATE_ENABLING = 4;
 			  */
-#ifdef MY_DEBUG_ACTUAL
-    Serial.println(message.getInt());
-#endif
-			  
-			  if (val == 0.5) {
+			  if (val < 0) {
 			  //Stop
-				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
-#ifdef MY_DEBUG_LOCAL
+          Cover[message.sensor-COVER_0_ID].loop(false,false);        
+				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].getState();
+#ifdef MY_DEBUG_ACTUAL
 				  Serial.print("GW Message stop: ");
 				  Serial.println(val);
 #endif
@@ -389,13 +388,12 @@ void receive(const MyMessage &message) {
 				  Serial.print("GW Msg up: ");
 				  Serial.println(val);
 #endif
-			  } else {
+			  } 
+			  else {
 				  driveToTarget(message.sensor-COVER_0_ID,val);
 			  }
 		  } 
-		  else {
-			  receivedLastLevel[message.sensor-COVER_0_ID] = true;	
-		  }
+		  
     }
 
 		else if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
