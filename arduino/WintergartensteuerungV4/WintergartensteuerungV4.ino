@@ -327,86 +327,86 @@ void loop()
 }
 
 void receive(const MyMessage &message) {
-  if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
-    if (message.isAck()) {
+	if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
+		if (message.isAck()) {
 #ifdef MY_DEBUG_LOCAL
-    Serial.println(F("Ack child1 from gw rec."));
+		Serial.println(F("Ack child1 from gw rec."));
 #endif
-    }
-    if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-		  int val = message.getInt();
-		  if (!receivedLastLevel[message.sensor-COVER_0_ID]) {
-			  receivedLastLevel[message.sensor-COVER_0_ID] = true;  
-      }
-      else {/*
-			  * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
-			  * const int STATE_UNKNOWN = 0;
+		}
+		if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
+			int val = message.getInt();
+			if (!receivedLastLevel[message.sensor-COVER_0_ID]) {
+				receivedLastLevel[message.sensor-COVER_0_ID] = true;  
+			}
+			else {/*
+				* Die State-Bezüge sind "geraten", es sollte lt cpp sein:
+				* const int STATE_UNKNOWN = 0;
 				  const int STATE_ENABLED = 1;
 				  const int STATE_DISABLING = 2;
 				  const int STATE_DISABLED = 3;
 				  const int STATE_ENABLING = 4;
-			  */
-			  if (val < 0) {
-			  //Stop
-          Cover[message.sensor-COVER_0_ID].loop(false,false);        
-				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].getState();
+				*/
+				if (val < 0) {
+				//Stop
+					Cover[message.sensor-COVER_0_ID].loop(false,false);        
+					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].getState();
 #ifdef MY_DEBUG_ACTUAL
-				  Serial.print("GW Message stop: ");
-				  Serial.println(val);
+					Serial.print("GW Message stop: ");
+					Serial.println(val);
 #endif
-			  }
+				}
 		
-			  else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			  //Down
-				  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-					  Cover[message.sensor-COVER_0_ID].loop(true, false);
-				  }
-				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+				else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+				//Down
+					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+						Cover[message.sensor-COVER_0_ID].loop(true, false);
+					}
+					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-				  Serial.print("GW Message down: ");
-				  Serial.println(val);
+					Serial.print("GW Message down: ");
+					Serial.println(val);
 #endif
-			  }
+				}
 		
-			  else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			  //Up
+				else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
+				//Up
 #ifdef MY_DEBUG_ACTUAL
-          Serial.println(message.getInt());
-          Serial.print("Cover state: ");
-          Serial.println(Cover[message.sensor-COVER_0_ID].getState());
+					Serial.println(message.getInt());
+					Serial.print("Cover state: ");
+					Serial.println(Cover[message.sensor-COVER_0_ID].getState());
 #endif
-				  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-					  Cover[message.sensor-COVER_0_ID].loop(false, true);
-				  }
-				  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+						Cover[message.sensor-COVER_0_ID].loop(false, true);
+					}
+					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-				  Serial.print("GW Msg up: ");
-				  Serial.println(val);
+					Serial.print("GW Msg up: ");
+					Serial.println(val);
 #endif
-			  } 
-			  else {
-				  driveToTarget(message.sensor-COVER_0_ID,val);
-			  }
-		  } 
+				} 
+				else {
+					driveToTarget(message.sensor-COVER_0_ID,val);
+				}
+			} 
 		  
-    }
+		}
 
 		else if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-		  if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-			  Cover[message.sensor-COVER_0_ID].loop(false, true);
-		  }
-		  State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-		  //sendState();
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+				Cover[message.sensor-COVER_0_ID].loop(false, true);
+			}
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+			//sendState();
 #ifdef MY_DEBUG_LOCAL
-		  Serial.print("GW Msg up, C ");
-		  Serial.println(message.sensor);
+			Serial.print("GW Msg up, C ");
+			Serial.println(message.sensor);
 #endif
-		 }
-		 else if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			 if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
+		}
+		else if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
+			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
 				Cover[message.sensor-COVER_0_ID].loop(true, false);
-		 }
-		 State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+			}
+			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
 			Serial.print(F("GW Msg down, C "));
 			Serial.println(message.sensor);
@@ -425,20 +425,20 @@ void receive(const MyMessage &message) {
 			 saveState((message.sensor),EmergencyEnable[message.sensor-COVER_0_ID]);
 			}
 #ifdef MY_DEBUG_ACTUAL
-      Serial.print("Cover emergency state: ");
-      Serial.println(EmergencyEnable[message.sensor-COVER_0_ID]);
+			Serial.print("Cover emergency state: ");
+			Serial.println(EmergencyEnable[message.sensor-COVER_0_ID]);
 #endif
 		}
-  }
+	}
 }
 byte decToBcd(byte val)
 {
-  return( (val/10*16) + (val%10) );
+	return( (val/10*16) + (val%10) );
 }
 // Convert binary coded decimal to normal decimal numbers
 byte bcdToDec(byte val)
 {
-  return( (val/16*10) + (val%16) );
+	return( (val/16*10) + (val%16) );
 }
 
 #ifdef MY_FORECAST
@@ -454,14 +454,12 @@ enum FORECAST
 
 float getLastPressureSamplesAverage()
 {
-  float lastPressureSamplesAverage = 0;
-  for (int i = 0; i < LAST_SAMPLES_COUNT; i++)
-  {
-    lastPressureSamplesAverage += lastPressureSamples[i];
-  }
-  lastPressureSamplesAverage /= LAST_SAMPLES_COUNT;
-
-  return lastPressureSamplesAverage;
+	float lastPressureSamplesAverage = 0;
+	for (int i = 0; i < LAST_SAMPLES_COUNT; i++) {
+		lastPressureSamplesAverage += lastPressureSamples[i];
+	}
+	lastPressureSamplesAverage /= LAST_SAMPLES_COUNT;
+	return lastPressureSamplesAverage;
 }
 
 
@@ -470,15 +468,15 @@ float getLastPressureSamplesAverage()
 // Pressure in hPa -->  forecast done by calculating kPa/h
 int sample(float pressure)
 {
-  // Calculate the average of the last n minutes.
-  int index = minuteCount % LAST_SAMPLES_COUNT;
-  lastPressureSamples[index] = pressure;
+	// Calculate the average of the last n minutes.
+	int index = minuteCount % LAST_SAMPLES_COUNT;
+	lastPressureSamples[index] = pressure;
 
-  minuteCount++;
-  if (minuteCount > 185)
-  {
-    minuteCount = 6;
-  }
+	minuteCount++;
+	if (minuteCount > 185)
+	{
+		minuteCount = 6;
+	}
 
   if (minuteCount == 5)
   {
