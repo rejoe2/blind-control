@@ -57,16 +57,9 @@ unsigned long lastSendBme = 0;
 // Input Pins for covers Up/Down
 // UP-Button, DOWN-Button
 const uint8_t INPUT_PINS[][2] = { {4,3}, {6,7}};
-/*const int SwMarkUp = 3;
-const int SwMarkDown = 4;
-// Input Pins for Switch Jalosie Up/Down
-const int SwJalUp = 7;
-const int SwJalDown = 6;*/
+
 //Notfall
 const uint8_t SwEmergency = 5;
-
-// Output Pins
-// Cover_ON, Cover_DOWN,
 
 bool UpStates[MAX_COVERS] = {0};
 bool DownStates[MAX_COVERS] = {0};
@@ -74,6 +67,8 @@ bool ReverseStates[MAX_COVERS] = {0};
 bool receivedLastLevel[MAX_COVERS] = {false};
 bool EmergencyEnable[MAX_COVERS] = {false};
 //const unsigned long ON_Time_Max = 16000;
+// Output Pins
+// Cover_ON, Cover_DOWN,
 const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
@@ -174,7 +169,7 @@ void before()
       debounce[i][j].attach(INPUT_PINS[i][j]);
       debounce[i][j].interval(5);
     }
-	EmergencyEnable[i] = loadState(COVER_0_ID+1);
+	EmergencyEnable[i] = loadState(COVER_0_ID+i);
   }
   pinMode(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.attach(SwEmergency);
@@ -427,7 +422,7 @@ void receive(const MyMessage &message) {
 		else if (message.type == V_VAR1){
 			EmergencyEnable[message.sensor-COVER_0_ID] = message.getBool();    
 			if (EmergencyEnable[message.sensor-COVER_0_ID] != loadState(message.sensor-COVER_0_ID)) {
-			 saveState((message.sensor-COVER_0_ID),EmergencyEnable[message.sensor-COVER_0_ID]);
+			 saveState((message.sensor),EmergencyEnable[message.sensor-COVER_0_ID]);
 			}
 #ifdef MY_DEBUG_ACTUAL
       Serial.print("Cover emergency state: ");
