@@ -4,7 +4,7 @@
  * Auf Arrays umgebaut
  * Vom Controller aus deaktivierbare Regensensorik => V_VAR1
  * Div. Vorbereitungen für Laufzeit-Berechnungen 
- * Fahrbefehle geändert (schließen = 0, hoch = 100, stop = 0.5)
+ * Fahrbefehle geändert (schließen = 0, hoch = 100, stop = -1)
  */
 
 #define SN "MultiCover"
