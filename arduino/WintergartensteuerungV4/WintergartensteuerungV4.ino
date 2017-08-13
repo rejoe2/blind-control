@@ -160,16 +160,16 @@ void before()
 {
   // Initialize In-/Outputs
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-	Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
-    for (uint8_t j=0; j<2; j++) {
-      pinMode(OUTPUT_PINS[i][j], OUTPUT);
-      digitalWrite(OUTPUT_PINS[i][j], HIGH);
-      pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
-      debounce[i][j] = Bounce();
-      debounce[i][j].attach(INPUT_PINS[i][j]);
-      debounce[i][j].interval(5);
-    }
-	EmergencyEnable[i] = loadState(COVER_0_ID+i);
+	  Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
+      for (uint8_t j=0; j<2; j++) {
+        pinMode(OUTPUT_PINS[i][j], OUTPUT);
+        digitalWrite(OUTPUT_PINS[i][j], HIGH);
+        pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
+        debounce[i][j] = Bounce();
+        debounce[i][j].attach(INPUT_PINS[i][j]);
+        debounce[i][j].interval(5);
+      }
+	  EmergencyEnable[i] = loadState(COVER_0_ID+i);
   }
   pinMode(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.attach(SwEmergency);
@@ -200,7 +200,7 @@ void presentation() {
 void setup() {
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     //sendState(i, COVER_0_ID+i);
-	request(COVER_0_ID+i, V_PERCENTAGE);
+	  request(COVER_0_ID+i, V_PERCENTAGE);
   }
   metric = getControllerConfig().isMetric;
 }
@@ -348,8 +348,7 @@ void receive(const MyMessage &message) {
 				*/
 				if (val < 0) {
 				//Stop
-					Cover[message.sensor-COVER_0_ID].loop(false,false);        
-					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].getState();
+					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
 #ifdef MY_DEBUG_ACTUAL
 					Serial.print("GW Message stop: ");
 					Serial.println(val);
@@ -359,7 +358,7 @@ void receive(const MyMessage &message) {
 				else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
 				//Down
 					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-						Cover[message.sensor-COVER_0_ID].loop(true, false);
+						State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 					}
 					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
@@ -376,7 +375,7 @@ void receive(const MyMessage &message) {
 					Serial.println(Cover[message.sensor-COVER_0_ID].getState());
 #endif
 					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-						Cover[message.sensor-COVER_0_ID].loop(false, true);
+						State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 					}
 					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
@@ -393,7 +392,7 @@ void receive(const MyMessage &message) {
 
 		else if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
 			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-				Cover[message.sensor-COVER_0_ID].loop(false, true);
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 			}
 			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
 			//sendState();
@@ -404,7 +403,7 @@ void receive(const MyMessage &message) {
 		}
 		else if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
 			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-				Cover[message.sensor-COVER_0_ID].loop(true, false);
+				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 			}
 			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
