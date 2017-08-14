@@ -164,15 +164,15 @@ void before()
       for (uint8_t j=0; j<2; j++) {
         pinMode(OUTPUT_PINS[i][j], OUTPUT);
         digitalWrite(OUTPUT_PINS[i][j], HIGH);
-        pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
+        //pinMode(INPUT_PINS[i][j], INPUT_PULLUP);
         debounce[i][j] = Bounce();
-        debounce[i][j].attach(INPUT_PINS[i][j]);
+        debounce[i][j].attach(INPUT_PINS[i][j], INPUT_PULLUP);
         debounce[i][j].interval(5);
       }
 	  EmergencyEnable[i] = loadState(COVER_0_ID+i);
   }
-  pinMode(SwEmergency, INPUT_PULLUP);
-  debounceMarkEmergency.attach(SwEmergency);
+  //pinMode(SwEmergency, INPUT_PULLUP);
+  debounceMarkEmergency.attach(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.interval(5);
 
   Wire.begin();
