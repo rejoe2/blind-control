@@ -22,6 +22,7 @@
 #define MY_RS485_BAUD_RATE 9600
 #define MY_NODE_ID 111
 #define MY_TRANSPORT_WAIT_READY_MS 2000
+#include <EEPROM.h>
 #include <Arduino.h>
 #include <SPI.h>
 #include <BH1750.h>
@@ -61,12 +62,24 @@ const uint8_t INPUT_PINS[][2] = { {4,3}, {6,7}};
 //Notfall
 const uint8_t SwEmergency = 5;
 
+// ********************* EEPROM DEFINES **********************************************
+#define EEPROM_OFFSET_SKETCH      512                   //  Address start where we store our data (before is mysensors stuff)
+#define EEPROM_POSITION           EEPROM_OFFSET_SKETCH  //  Address of shutter last position
+#define EEPROM_TRAVELUP           (EEPROM_POSITION+1)   //  Address of travel time for Up. 16bit value
+#define EEPROM_TRAVELDOWN         (EEPROM_TRAVELUP+2)   //  Address of travel time for Down. 16bit value
+
+// ********************* CALIBRATION DEFINES *****************************************
+//#define START_POSITION            0                     // Shutter start position in % if no parameter in memory
+
+uint16_t travelUpTime[MAX_COVERS] = {16000};   // in ms, time measured between 0-100% for Up. it's initialization value. if autocalibration used, these will be overriden
+uint16_t travelDownTime[MAX_COVERS] = {16000}; // in ms, time measured between 0-100% for Down
+
 bool UpStates[MAX_COVERS] = {0};
 bool DownStates[MAX_COVERS] = {0};
 bool ReverseStates[MAX_COVERS] = {0};
 bool receivedLastLevel[MAX_COVERS] = {false};
 bool EmergencyEnable[MAX_COVERS] = {false};
-//const unsigned long ON_Time_Max = 16000;
+
 // Output Pins
 // Cover_ON, Cover_DOWN,
 const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
@@ -82,7 +95,6 @@ uint8_t State[MAX_COVERS] = {0};
 uint8_t oldState[MAX_COVERS] = {0};
 uint8_t status[MAX_COVERS] = {0};
 uint8_t oldStatus[MAX_COVERS] = {0};
-#define EEPROM_DEVICE_ADDR_START  64     // start byte in eeprom for timing storage
 
 MyMessage upMessage(COVER_0_ID, V_UP);
 MyMessage downMessage(COVER_0_ID, V_DOWN);
@@ -160,7 +172,9 @@ void before()
 {
   // Initialize In-/Outputs
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
-	  Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],16000);
+    travelUpTime[i] = readEeprom(EEPROM_POSITION+4*i);
+    travelDownTime[i] = readEeprom(EEPROM_POSITION+4*i+2);
+    Cover[i] = Wgs(OUTPUT_PINS[i][0],OUTPUT_PINS[i][1],travelUpTime[i]);
       for (uint8_t j=0; j<2; j++) {
         pinMode(OUTPUT_PINS[i][j], OUTPUT);
         digitalWrite(OUTPUT_PINS[i][j], HIGH);
@@ -169,7 +183,7 @@ void before()
         debounce[i][j].attach(INPUT_PINS[i][j], INPUT_PULLUP);
         debounce[i][j].interval(5);
       }
-	  EmergencyEnable[i] = loadState(COVER_0_ID+i);
+    EmergencyEnable[i] = loadState(COVER_0_ID+i);
   }
   //pinMode(SwEmergency, INPUT_PULLUP);
   debounceMarkEmergency.attach(SwEmergency, INPUT_PULLUP);
@@ -200,7 +214,9 @@ void presentation() {
 void setup() {
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     //sendState(i, COVER_0_ID+i);
-	  request(COVER_0_ID+i, V_PERCENTAGE);
+    request(COVER_0_ID+i, V_PERCENTAGE);
+    request(COVER_0_ID+i, V_VAR2);
+    request(COVER_0_ID+i, V_VAR3);
   }
   metric = getControllerConfig().isMetric;
 }
@@ -215,11 +231,11 @@ void loop()
   for (uint8_t i = 0; i < MAX_COVERS; i++) {
     for (uint8_t j=0; j<2; j++) {
       debounce[i][j].update();
-	  if (!bounceUpdate){
-		  bounceUpdate[i] = debounce[i][j].read() == HIGH;
-	  }
+    if (!bounceUpdate){
+      bounceUpdate[i] = debounce[i][j].read() == HIGH;
+    }
       button[i][j] = debounce[i][j].read() == LOW;
-	}
+  }
   if (EmergencyEnable[i] == 1) Cover[i].setDisable(emergency);
   }
 
@@ -327,117 +343,130 @@ void loop()
 }
 
 void receive(const MyMessage &message) {
-	if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
-		if (message.isAck()) {
+  if (message.sensor >= COVER_0_ID && message.sensor <= COVER_0_ID+MAX_COVERS) {
+    uint8_t cover_i = message.sensor-COVER_0_ID;
+    if (message.isAck()) {
 #ifdef MY_DEBUG_LOCAL
-		Serial.println(F("Ack child1 from gw rec."));
+    Serial.println(F("Ack child1 from gw rec."));
 #endif
-		}
-		if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
-			int val = message.getInt();
-			if (!receivedLastLevel[message.sensor-COVER_0_ID]) {
-				receivedLastLevel[message.sensor-COVER_0_ID] = true;  
-			}
-			else {/*
-				* Die State-Bezüge sind "geraten", es sollte lt cpp sein:
-				* const int STATE_UNKNOWN = 0;
-				  const int STATE_ENABLED = 1;
-				  const int STATE_DISABLING = 2;
-				  const int STATE_DISABLED = 3;
-				  const int STATE_ENABLING = 4;
-				*/
-				if (val < 0) {
-				//Stop
-					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+    }
+    if (message.type == V_DIMMER) { // This could be M_ACK_VARIABLE or M_SET_VARIABLE
+      int val = message.getInt();
+      if (!receivedLastLevel[cover_i]) {
+        receivedLastLevel[cover_i] = true;  
+      }
+      else {/*
+        * Die State-Bezüge sind "geraten", es sollte lt cpp sein:
+        * const int STATE_UNKNOWN = 0;
+          const int STATE_ENABLED = 1;
+          const int STATE_DISABLING = 2;
+          const int STATE_DISABLED = 3;
+          const int STATE_ENABLING = 4;
+        */
+        if (val < 0) {
+        //Stop
+          Cover[cover_i].stopMovement(0);
 #ifdef MY_DEBUG_ACTUAL
-					Serial.print("GW Message stop: ");
-					Serial.println(val);
+          Serial.print("GW Message stop: ");
+          Serial.println(val);
 #endif
-				}
-		
-				else if (val == 0 && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-				//Down
-					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-						State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
-					}
-					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+        }
+    
+        else if (val == 0 && State[cover_i] != 2 && State[cover_i] != 3) {
+        //Down
+          if (Cover[cover_i].getState() != 0) {
+            State[cover_i] = Cover[cover_i].loop(true, false);
+          }
+          State[cover_i] = Cover[cover_i].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-					Serial.print("GW Message down: ");
-					Serial.println(val);
+          Serial.print("GW Message down: ");
+          Serial.println(val);
 #endif
-				}
-		
-				else if (val == 100 && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-				//Up
+        }
+    
+        else if (val == 100 && State[cover_i] != 1 && State[cover_i] != 4) {
+        //Up
 #ifdef MY_DEBUG_ACTUAL
-					Serial.println(message.getInt());
-					Serial.print("Cover state: ");
-					Serial.println(Cover[message.sensor-COVER_0_ID].getState());
+          Serial.println(message.getInt());
+          Serial.print("Cover state: ");
+          Serial.println(Cover[cover_i].getState());
 #endif
-					if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-						State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-					}
-					State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
+          if (Cover[cover_i].getState() != 0) {
+            State[cover_i] = Cover[cover_i].loop(false, true);
+          }
+          State[cover_i] = Cover[cover_i].loop(false, true);
 #ifdef MY_DEBUG_LOCAL
-					Serial.print("GW Msg up: ");
-					Serial.println(val);
+          Serial.print("GW Msg up: ");
+          Serial.println(val);
 #endif
-				} 
-				else {
-					driveToTarget(message.sensor-COVER_0_ID,val);
-				}
-			} 
-		  
-		}
+        } 
+        else {
+          driveToTarget(cover_i,val);
+        }
+      } 
+      
+    }
 
-		else if (message.type == V_UP && State[message.sensor-COVER_0_ID] != 1 && State[message.sensor-COVER_0_ID] != 4) {
-			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-			}
-			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, true);
-			//sendState();
+    else if (message.type == V_UP && State[cover_i] != 1 && State[cover_i] != 4) {
+      if (Cover[cover_i].getState() != 0) {
+        State[cover_i] = Cover[cover_i].loop(false, true);
+      }
+      State[cover_i] = Cover[cover_i].loop(false, true);
+      //sendState();
 #ifdef MY_DEBUG_LOCAL
-			Serial.print("GW Msg up, C ");
-			Serial.println(message.sensor);
+      Serial.print("GW Msg up, C ");
+      Serial.println(message.sensor);
 #endif
-		}
-		else if (message.type == V_DOWN && State[message.sensor-COVER_0_ID] != 2 && State[message.sensor-COVER_0_ID] != 3) {
-			if (Cover[message.sensor-COVER_0_ID].getState() != 0) {
-				State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
-			}
-			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(true, false);
+    }
+    else if (message.type == V_DOWN && State[cover_i] != 2 && State[cover_i] != 3) {
+      if (Cover[cover_i].getState() != 0) {
+        State[cover_i] = Cover[cover_i].loop(true, false);
+      }
+      State[cover_i] = Cover[cover_i].loop(true, false);
 #ifdef MY_DEBUG_LOCAL
-			Serial.print(F("GW Msg down, C "));
-			Serial.println(message.sensor);
+      Serial.print(F("GW Msg down, C "));
+      Serial.println(message.sensor);
 #endif
-		}
-		else if (message.type == V_STOP) {
-			State[message.sensor-COVER_0_ID] = Cover[message.sensor-COVER_0_ID].loop(false, false);
+    }
+    else if (message.type == V_STOP) {
+      Cover[cover_i].stopMovement(0);
 #ifdef MY_DEBUG_LOCAL
-			Serial.print(F("GW Msg stop, C "));
-			Serial.println(message.sensor);
+      Serial.print(F("GW Msg stop, C "));
+      Serial.println(message.sensor);
 #endif
-		}
-		else if (message.type == V_VAR1){
-			EmergencyEnable[message.sensor-COVER_0_ID] = message.getBool();    
-			if (EmergencyEnable[message.sensor-COVER_0_ID] != loadState(message.sensor-COVER_0_ID)) {
-			 saveState((message.sensor),EmergencyEnable[message.sensor-COVER_0_ID]);
-			}
+    }
+    else if (message.type == V_VAR1){
+      EmergencyEnable[cover_i] = message.getBool();    
+      if (EmergencyEnable[cover_i] != loadState(cover_i)) {
+       saveState(message.sensor,EmergencyEnable[cover_i]);
+      }
 #ifdef MY_DEBUG_ACTUAL
-			Serial.print("Cover emergency state: ");
-			Serial.println(EmergencyEnable[message.sensor-COVER_0_ID]);
+      Serial.print("Cover emergency state: ");
+      Serial.println(EmergencyEnable[cover_i]);
 #endif
-		}
-	}
+    }
+    else if (message.type == V_VAR2 && message.getInt() > 0) {
+      travelUpTime[cover_i] = message.getInt();    
+      if (travelUpTime[cover_i] != readEeprom(EEPROM_POSITION+4*cover_i)) {
+       writeEeprom(EEPROM_POSITION+4*cover_i+2, travelUpTime[cover_i]);
+      }
+    }
+    else if (message.type == V_VAR3 && message.getInt() > 0) {
+      travelDownTime[cover_i] = message.getInt();    
+      if (travelDownTime[cover_i] != readEeprom(EEPROM_POSITION+4*cover_i+2)) {
+       writeEeprom(EEPROM_POSITION+4*cover_i+2, travelDownTime[cover_i]); 
+      }
+    }
+  }
 }
 byte decToBcd(byte val)
 {
-	return( (val/10*16) + (val%10) );
+  return( (val/10*16) + (val%10) );
 }
 // Convert binary coded decimal to normal decimal numbers
 byte bcdToDec(byte val)
 {
-	return( (val/16*10) + (val%16) );
+  return( (val/16*10) + (val%16) );
 }
 
 #ifdef MY_FORECAST
@@ -453,12 +482,12 @@ enum FORECAST
 
 float getLastPressureSamplesAverage()
 {
-	float lastPressureSamplesAverage = 0;
-	for (int i = 0; i < LAST_SAMPLES_COUNT; i++) {
-		lastPressureSamplesAverage += lastPressureSamples[i];
-	}
-	lastPressureSamplesAverage /= LAST_SAMPLES_COUNT;
-	return lastPressureSamplesAverage;
+  float lastPressureSamplesAverage = 0;
+  for (int i = 0; i < LAST_SAMPLES_COUNT; i++) {
+    lastPressureSamplesAverage += lastPressureSamples[i];
+  }
+  lastPressureSamplesAverage /= LAST_SAMPLES_COUNT;
+  return lastPressureSamplesAverage;
 }
 
 
@@ -467,15 +496,15 @@ float getLastPressureSamplesAverage()
 // Pressure in hPa -->  forecast done by calculating kPa/h
 int sample(float pressure)
 {
-	// Calculate the average of the last n minutes.
-	int index = minuteCount % LAST_SAMPLES_COUNT;
-	lastPressureSamples[index] = pressure;
+  // Calculate the average of the last n minutes.
+  int index = minuteCount % LAST_SAMPLES_COUNT;
+  lastPressureSamples[index] = pressure;
 
-	minuteCount++;
-	if (minuteCount > 185)
-	{
-		minuteCount = 6;
-	}
+  minuteCount++;
+  if (minuteCount > 185)
+  {
+    minuteCount = 6;
+  }
 
   if (minuteCount == 5)
   {
@@ -604,3 +633,42 @@ int sample(float pressure)
   return forecast;
 }
 #endif
+
+/* ======================================================================
+Function: writeEeprom
+Purpose : Write uint16_t values in eeprom for (max 65535)
+Input   : - pos : start position in eeprom
+          - value : 16bits value to write 
+Comments: 
+====================================================================== */
+void writeEeprom(uint16_t pos, uint16_t value) {
+  
+    // function for saving the values to the internal EEPROM
+    // value = the value to be stored (as int)
+    // pos = the first byte position to store the value in
+    // only two bytes can be stored with this function (max 32.767)
+    EEPROM.write(pos, ((uint16_t)value >> 8 ));
+    pos++;
+    EEPROM.write(pos, (value & 0xff));
+    
+}
+/* ======================================================================
+Function: readEeprom
+Purpose : read uint16_t values in eeprom for (max 65535)
+Input   :  - pos : start position in eeprom
+Output  :  - return 16bits value
+Comments: 
+====================================================================== */
+uint16_t readEeprom(uint16_t pos) {
+  
+    // function for reading the values from the internal EEPROM
+    // pos = the first byte position to read the value from 
+    uint16_t hiByte;
+    uint16_t loByte;
+
+    hiByte = EEPROM.read(pos) << 8;
+    pos++;
+    loByte = EEPROM.read(pos);
+    return (hiByte | loByte);
+    
+}
