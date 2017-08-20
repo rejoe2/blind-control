@@ -82,7 +82,7 @@ bool EmergencyEnable[MAX_COVERS] = {false};
 
 // Output Pins
 // Cover_ON, Cover_DOWN,
-const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{10,12}, {11,13}} ;
+const uint8_t OUTPUT_PINS[MAX_COVERS][2] = {{12,10}, {13,11}} ;
 /*const int JalOn = 10;   // activates relais 2
 const int JalDown = 12; // activates relais1+2
 const int MarkOn = 11; // activates relais 4
